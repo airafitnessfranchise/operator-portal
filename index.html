@@ -1,466 +1,2998 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#07080c" />
-  <title>Aira Fitness — Operator Portal</title>
-  <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="icon-192.png" />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-    html, body, #root { height:100%; }
-    body { background:#07080c; font-family:'DM Sans',sans-serif; color:#c8c9d0; overflow-x:hidden; -webkit-font-smoothing:antialiased; }
-    input, button, select, textarea { font-family:inherit; }
-    a { text-decoration:none; }
-    ::-webkit-scrollbar { width:4px; }
-    ::-webkit-scrollbar-track { background:transparent; }
-    ::-webkit-scrollbar-thumb { background:#2a2d3e; border-radius:4px; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-    .fade-in { animation: fadeIn 0.3s ease-out forwards; }
-  </style>
-</head>
-<body>
-  <div id="root"></div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-  <script type="text/babel">
-const { useState, useEffect, useCallback, useRef } = React;
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="theme-color" content="#07080c" />
+    <title>Aira Fitness — Operator Portal</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script type="module">
+      import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+      window.supabase = createClient(
+        "https://rgpfzactcqbvadthzsgx.supabase.co",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJncGZ6YWN0Y3FidmFkdGh6c2d4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0NzU2NTQsImV4cCI6MjA5MjA1MTY1NH0.rbiSxQfzVU_pvF9X8BN2jGU_pBdcwJRN_n00pivAc1w",
+        {
+          auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+          },
+        },
+      );
+    </script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+      }
+      body {
+        background: #07080c;
+        font-family: "DM Sans", sans-serif;
+        color: #c8c9d0;
+        overflow-x: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
+      input,
+      button,
+      select,
+      textarea {
+        font-family: inherit;
+      }
+      a {
+        text-decoration: none;
+      }
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #2a2d3e;
+        border-radius: 4px;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.3;
+        }
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .fade-in {
+        animation: fadeIn 0.3s ease-out forwards;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .spinner {
+        animation: spin 0.8s linear infinite;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+    <script type="text/babel">
+      const { useState, useEffect, useCallback, useRef } = React;
 
-// ══════════════════════════════════════════════
-// AIRA FITNESS — OPERATOR PORTAL v1
-// ══════════════════════════════════════════════
+      // ══════════════════════════════════════════════
+      // AIRA FITNESS — OPERATOR PORTAL v1
+      // ══════════════════════════════════════════════
 
-const T = {
-  bg:"#07080c", surface:"#0f1117", card:"#161820", cardHover:"#1c1e28",
-  border:"#1f2233", borderLight:"#2a2d3e",
-  accent:"#00e4b8", accentDim:"rgba(0,228,184,0.12)", accentGlow:"rgba(0,228,184,0.25)",
-  orange:"#ff7a3d", orangeDim:"rgba(255,122,61,0.12)",
-  red:"#ff4757", redDim:"rgba(255,71,87,0.12)",
-  yellow:"#ffbe0b", yellowDim:"rgba(255,190,11,0.12)",
-  blue:"#4895ef", blueDim:"rgba(72,149,239,0.12)",
-  purple:"#b362ff", purpleDim:"rgba(179,98,255,0.12)",
-  white:"#f0f0f5", text:"#c8c9d0", dim:"#6b6d7b", muted:"#404254",
-};
+      const T = {
+        bg: "#07080c",
+        surface: "#0f1117",
+        card: "#161820",
+        cardHover: "#1c1e28",
+        border: "#1f2233",
+        borderLight: "#2a2d3e",
+        accent: "#00e4b8",
+        accentDim: "rgba(0,228,184,0.12)",
+        accentGlow: "rgba(0,228,184,0.25)",
+        orange: "#ff7a3d",
+        orangeDim: "rgba(255,122,61,0.12)",
+        red: "#ff4757",
+        redDim: "rgba(255,71,87,0.12)",
+        yellow: "#ffbe0b",
+        yellowDim: "rgba(255,190,11,0.12)",
+        blue: "#4895ef",
+        blueDim: "rgba(72,149,239,0.12)",
+        purple: "#b362ff",
+        purpleDim: "rgba(179,98,255,0.12)",
+        white: "#f0f0f5",
+        text: "#c8c9d0",
+        dim: "#6b6d7b",
+        muted: "#404254",
+      };
 
-const STATUS_ICONS = {"New Lead":"🔵","Booked":"📅","Confirmed":"✅","No Show":"❌","Show":"👤","Sold":"🔥","7DP Given":"🎟","7DP Not Converted":"⏳","Cancelled":"🚫"};
+      const STATUS_ICONS = {
+        "New Lead": "🔵",
+        Booked: "📅",
+        Confirmed: "✅",
+        "No Show": "❌",
+        Show: "👤",
+        Sold: "🔥",
+        "7DP Given": "🎟",
+        "7DP Not Converted": "⏳",
+        Cancelled: "🚫",
+      };
 
-// ── Seed Data (real Fox Lake GHL data) ──
-function getSeedData() {
-  return {
-    location:{name:"Aira Fitness Fox Lake",address:"600 Rt 59, Fox Lake, IL 60041",phone:"(815) 528-3282"},
-    stats:{totalLeads:43,shows:17,noShows:10,cancelled:2,sales:5,revenue:1201,adSpend:600,unreadConvos:390},
-    leads:[
-      {id:1,first:"Eric",last:"Alcantara",phone:"+12244788362",email:"1211aeric@gmail.com",source:"Facebook Ad",date:"04/17",status:"New Lead",assigned:null,aptDate:null,notes:""},
-      {id:2,first:"Rich",last:"Rowe",phone:"+18473023588",email:"richrowe21@gmail.com",source:"Facebook Ad",date:"04/16",status:"New Lead",assigned:null,aptDate:null,notes:""},
-      {id:3,first:"Robert",last:"Stewart",phone:"+17739603172",email:"r.stewart753@gmail.com",source:"Facebook Ad",date:"04/16",status:"Booked",assigned:null,aptDate:"04/17",notes:""},
-      {id:4,first:"Jose",last:"Tellez",phone:"+18478145673",email:"coleangel@live.com",source:"Facebook Ad",date:"04/12",status:"No Show",assigned:null,aptDate:"04/13",notes:"Cancelled today, replied No to reschedule"},
-      {id:5,first:"Adriana",last:"Carbajal",phone:"+18158147202",email:"addycarbajal12@gmail.com",source:"Facebook Ad",date:"04/13",status:"Show",assigned:"Jenny",aptDate:"04/17",notes:"2:30 PM — 7DP Given"},
-      {id:6,first:"Michael",last:"Nava",phone:"+12245396114",email:"michaelnava42@gmail.com",source:"Facebook Ad",date:"04/09",status:"Sold",assigned:"Jasmine",aptDate:"04/10",notes:"$267 collected"},
-      {id:7,first:"James",last:"Riechers",phone:"+12244265534",email:"james.riechers@yahoo.com",source:"Facebook Ad",date:"04/10",status:"Sold",assigned:"Jasmine",aptDate:"04/13",notes:"$183 collected"},
-      {id:8,first:"Max",last:"Cedillo",phone:"+13129653644",email:"maximinocedillo60@gmail.com",source:"Walk-In",date:"04/13",status:"Sold",assigned:"Jasmine",aptDate:"04/13",notes:"$183 — husband/wife split enrollment"},
-      {id:9,first:"Adrianna",last:"Costilla",phone:"+12242753397",email:"aydreeahnuh21@gmail.com",source:"Walk-In",date:"04/13",status:"Sold",assigned:"Jasmine",aptDate:"04/13",notes:"$183 — husband/wife split enrollment"},
-      {id:10,first:"Alex",last:"Blanken",phone:"+18157082381",email:"blanksalex2056@gmail.com",source:"Schedulista",date:"04/13",status:"Sold",assigned:"Jenny",aptDate:"04/13",notes:"$267 collected"},
-      {id:11,first:"Oscar",last:"Marquez",phone:"+12244282669",email:"marq_622@icloud.com",source:"Facebook Ad",date:"03/15",status:"7DP Not Converted",assigned:"Jenny",aptDate:"04/09",notes:"Asking about broken sauna"},
-      {id:12,first:"Connie",last:"Chor",phone:"+12244198503",email:"cleancon777@yahoo.com",source:"Facebook Ad",date:"04/10",status:"Show",assigned:"Jenny",aptDate:"04/13",notes:"Interested in Grayslake"},
-      {id:13,first:"Iraim",last:"Salgado",phone:"+17739717169",email:"iraimsal@gmail.com",source:"Cold Lead",date:"03/26",status:"Show",assigned:"Sami",aptDate:"04/07",notes:"Talking to boss re: gym coverage"},
-      {id:14,first:"James",last:"Duffy",phone:"+18159701506",email:"fernduffy2023@gmail.com",source:"Facebook Ad",date:"04/13",status:"Booked",assigned:"Jenny",aptDate:"04/18",notes:"⚠️ Said 'yall should communicate'"},
-      {id:15,first:"Gary",last:"Matney",phone:"+18155293269",email:"matneygaryd@gmail.com",source:"Facebook Ad",date:"04/14",status:"New Lead",assigned:null,aptDate:null,notes:"Missed call follow-up sent"},
-      {id:16,first:"Lisa",last:"Poulsen",phone:"+18477321322",email:"lisapoulsen@att.net",source:"Facebook Ad",date:"04/14",status:"Booked",assigned:null,aptDate:"04/20",notes:"11:30 AM"},
-      {id:17,first:"Stephanie",last:"Edmond",phone:"+18478879349",email:"hotblackgirl23@gmail.com",source:"Facebook Ad",date:"03/11",status:"Show",assigned:"Jasmine",aptDate:"04/13",notes:"Found different gym"},
-      {id:18,first:"Joe",last:"Rizzi",phone:"+17797040380",email:"rizzij66@yahoo.com",source:"Schedulista",date:"04/12",status:"Show",assigned:"Jasmine",aptDate:"04/15",notes:"7DP — $25/$302 on 4/25"},
-    ],
-    conversations:[
-      {id:1,name:"Eric Alcantara",phone:"+12244788362",lastMsg:"I've got: Mon 4/20 2:00pm or 3:30pm...",time:"2 min ago",unread:0,direction:"out"},
-      {id:2,name:"Jose Tellez",phone:"+18478145673",lastMsg:"No",time:"12 min ago",unread:1,direction:"in"},
-      {id:3,name:"Gary Matney",phone:"+18155293269",lastMsg:"Hi this is Aira Fitness Fox Lake...",time:"14 min ago",unread:0,direction:"out"},
-      {id:4,name:"Sara Gonzalez",phone:"+12244331430",lastMsg:"Hey its Sarah from aira fitness...",time:"1 hr ago",unread:0,direction:"out"},
-      {id:5,name:"Richard Jordan",phone:"+12546276820",lastMsg:"Hey Richard, just wanted to confirm...",time:"2 hr ago",unread:0,direction:"out"},
-      {id:6,name:"James Duffy",phone:"+18159701506",lastMsg:"Yall should communicate between your team",time:"Yesterday",unread:2,direction:"in"},
-      {id:7,name:"Brittany Morey",phone:"+18479700399",lastMsg:"?",time:"Yesterday",unread:1,direction:"out"},
-      {id:8,name:"Iraim Salgado",phone:"+17739717169",lastMsg:"Thank you",time:"Yesterday",unread:1,direction:"in"},
-      {id:9,name:"Oscar Marquez",phone:"+12244282669",lastMsg:"Hey yeah I'll probably go again tomorrow...",time:"2 days ago",unread:3,direction:"in"},
-      {id:10,name:"Stephanie Edmond",phone:"+18478879349",lastMsg:"Ok",time:"2 days ago",unread:1,direction:"in"},
-    ],
-    appointments:[
-      {id:1,name:"Robert Stewart",phone:"+17739603172",time:"11:00 AM",date:"Today",status:"confirmed",type:"Prospect"},
-      {id:2,name:"Adriana Carbajal",phone:"+18158147202",time:"2:30 PM",date:"Today",status:"confirmed",type:"Prospect"},
-      {id:3,name:"Jose Tellez",phone:"+18478145673",time:"12:30 PM",date:"Today",status:"cancelled",type:"Prospect"},
-      {id:4,name:"Christopher Gomez",phone:"+12248142906",time:"4:30 PM",date:"Apr 18",status:"upcoming",type:"Prospect"},
-      {id:5,name:"James Duffy",phone:"+18159701506",time:"6:30 PM",date:"Apr 18",status:"upcoming",type:"Prospect"},
-      {id:6,name:"Joseph Moreno",phone:"+15012473595",time:"10:00 AM",date:"Apr 18",status:"upcoming",type:"Prospect"},
-      {id:7,name:"Lisa Poulsen",phone:"+18477321322",time:"11:30 AM",date:"Apr 20",status:"upcoming",type:"Prospect"},
-      {id:8,name:"Ashanti Castillo",phone:"+12242823737",time:"12:30 PM",date:"Apr 20",status:"upcoming",type:"Prospect"},
-      {id:9,name:"Vanessa Lara",phone:"+12246374813",time:"6:30 PM",date:"Apr 20",status:"upcoming",type:"Prospect"},
-      {id:10,name:"Matthew Shelby",phone:"+18155294316",time:"TBD",date:"Apr 21",status:"upcoming",type:"Prospect"},
-    ],
-    reps:[
-      {name:"Jasmine",role:"Manager",shows:8,sales:4,revenue:934,calls:12},
-      {name:"Jenny",role:"Sales Rep",shows:5,sales:1,revenue:267,calls:8},
-      {name:"Sami",role:"Sales Rep",shows:4,sales:0,revenue:0,calls:5},
-      {name:"Maggie",role:"Sales Rep",shows:0,sales:0,revenue:0,calls:2},
-    ],
-  };
-}
+      // ── Seed Data (real Fox Lake GHL data) ──
+      function getSeedData() {
+        return {
+          location: {
+            name: "Aira Fitness Fox Lake",
+            address: "600 Rt 59, Fox Lake, IL 60041",
+            phone: "(815) 528-3282",
+          },
+          stats: {
+            totalLeads: 43,
+            shows: 17,
+            noShows: 10,
+            cancelled: 2,
+            sales: 5,
+            revenue: 1201,
+            adSpend: 600,
+            unreadConvos: 390,
+          },
+          leads: [
+            {
+              id: 1,
+              first: "Eric",
+              last: "Alcantara",
+              phone: "+12244788362",
+              email: "1211aeric@gmail.com",
+              source: "Facebook Ad",
+              date: "04/17",
+              status: "New Lead",
+              assigned: null,
+              aptDate: null,
+              notes: "",
+            },
+            {
+              id: 2,
+              first: "Rich",
+              last: "Rowe",
+              phone: "+18473023588",
+              email: "richrowe21@gmail.com",
+              source: "Facebook Ad",
+              date: "04/16",
+              status: "New Lead",
+              assigned: null,
+              aptDate: null,
+              notes: "",
+            },
+            {
+              id: 3,
+              first: "Robert",
+              last: "Stewart",
+              phone: "+17739603172",
+              email: "r.stewart753@gmail.com",
+              source: "Facebook Ad",
+              date: "04/16",
+              status: "Booked",
+              assigned: null,
+              aptDate: "04/17",
+              notes: "",
+            },
+            {
+              id: 4,
+              first: "Jose",
+              last: "Tellez",
+              phone: "+18478145673",
+              email: "coleangel@live.com",
+              source: "Facebook Ad",
+              date: "04/12",
+              status: "No Show",
+              assigned: null,
+              aptDate: "04/13",
+              notes: "Cancelled today, replied No to reschedule",
+            },
+            {
+              id: 5,
+              first: "Adriana",
+              last: "Carbajal",
+              phone: "+18158147202",
+              email: "addycarbajal12@gmail.com",
+              source: "Facebook Ad",
+              date: "04/13",
+              status: "Show",
+              assigned: "Jenny",
+              aptDate: "04/17",
+              notes: "2:30 PM — 7DP Given",
+            },
+            {
+              id: 6,
+              first: "Michael",
+              last: "Nava",
+              phone: "+12245396114",
+              email: "michaelnava42@gmail.com",
+              source: "Facebook Ad",
+              date: "04/09",
+              status: "Sold",
+              assigned: "Jasmine",
+              aptDate: "04/10",
+              notes: "$267 collected",
+            },
+            {
+              id: 7,
+              first: "James",
+              last: "Riechers",
+              phone: "+12244265534",
+              email: "james.riechers@yahoo.com",
+              source: "Facebook Ad",
+              date: "04/10",
+              status: "Sold",
+              assigned: "Jasmine",
+              aptDate: "04/13",
+              notes: "$183 collected",
+            },
+            {
+              id: 8,
+              first: "Max",
+              last: "Cedillo",
+              phone: "+13129653644",
+              email: "maximinocedillo60@gmail.com",
+              source: "Walk-In",
+              date: "04/13",
+              status: "Sold",
+              assigned: "Jasmine",
+              aptDate: "04/13",
+              notes: "$183 — husband/wife split enrollment",
+            },
+            {
+              id: 9,
+              first: "Adrianna",
+              last: "Costilla",
+              phone: "+12242753397",
+              email: "aydreeahnuh21@gmail.com",
+              source: "Walk-In",
+              date: "04/13",
+              status: "Sold",
+              assigned: "Jasmine",
+              aptDate: "04/13",
+              notes: "$183 — husband/wife split enrollment",
+            },
+            {
+              id: 10,
+              first: "Alex",
+              last: "Blanken",
+              phone: "+18157082381",
+              email: "blanksalex2056@gmail.com",
+              source: "Schedulista",
+              date: "04/13",
+              status: "Sold",
+              assigned: "Jenny",
+              aptDate: "04/13",
+              notes: "$267 collected",
+            },
+            {
+              id: 11,
+              first: "Oscar",
+              last: "Marquez",
+              phone: "+12244282669",
+              email: "marq_622@icloud.com",
+              source: "Facebook Ad",
+              date: "03/15",
+              status: "7DP Not Converted",
+              assigned: "Jenny",
+              aptDate: "04/09",
+              notes: "Asking about broken sauna",
+            },
+            {
+              id: 12,
+              first: "Connie",
+              last: "Chor",
+              phone: "+12244198503",
+              email: "cleancon777@yahoo.com",
+              source: "Facebook Ad",
+              date: "04/10",
+              status: "Show",
+              assigned: "Jenny",
+              aptDate: "04/13",
+              notes: "Interested in Grayslake",
+            },
+            {
+              id: 13,
+              first: "Iraim",
+              last: "Salgado",
+              phone: "+17739717169",
+              email: "iraimsal@gmail.com",
+              source: "Cold Lead",
+              date: "03/26",
+              status: "Show",
+              assigned: "Sami",
+              aptDate: "04/07",
+              notes: "Talking to boss re: gym coverage",
+            },
+            {
+              id: 14,
+              first: "James",
+              last: "Duffy",
+              phone: "+18159701506",
+              email: "fernduffy2023@gmail.com",
+              source: "Facebook Ad",
+              date: "04/13",
+              status: "Booked",
+              assigned: "Jenny",
+              aptDate: "04/18",
+              notes: "⚠️ Said 'yall should communicate'",
+            },
+            {
+              id: 15,
+              first: "Gary",
+              last: "Matney",
+              phone: "+18155293269",
+              email: "matneygaryd@gmail.com",
+              source: "Facebook Ad",
+              date: "04/14",
+              status: "New Lead",
+              assigned: null,
+              aptDate: null,
+              notes: "Missed call follow-up sent",
+            },
+            {
+              id: 16,
+              first: "Lisa",
+              last: "Poulsen",
+              phone: "+18477321322",
+              email: "lisapoulsen@att.net",
+              source: "Facebook Ad",
+              date: "04/14",
+              status: "Booked",
+              assigned: null,
+              aptDate: "04/20",
+              notes: "11:30 AM",
+            },
+            {
+              id: 17,
+              first: "Stephanie",
+              last: "Edmond",
+              phone: "+18478879349",
+              email: "hotblackgirl23@gmail.com",
+              source: "Facebook Ad",
+              date: "03/11",
+              status: "Show",
+              assigned: "Jasmine",
+              aptDate: "04/13",
+              notes: "Found different gym",
+            },
+            {
+              id: 18,
+              first: "Joe",
+              last: "Rizzi",
+              phone: "+17797040380",
+              email: "rizzij66@yahoo.com",
+              source: "Schedulista",
+              date: "04/12",
+              status: "Show",
+              assigned: "Jasmine",
+              aptDate: "04/15",
+              notes: "7DP — $25/$302 on 4/25",
+            },
+          ],
+          conversations: [
+            {
+              id: 1,
+              name: "Eric Alcantara",
+              phone: "+12244788362",
+              lastMsg: "I've got: Mon 4/20 2:00pm or 3:30pm...",
+              time: "2 min ago",
+              unread: 0,
+              direction: "out",
+            },
+            {
+              id: 2,
+              name: "Jose Tellez",
+              phone: "+18478145673",
+              lastMsg: "No",
+              time: "12 min ago",
+              unread: 1,
+              direction: "in",
+            },
+            {
+              id: 3,
+              name: "Gary Matney",
+              phone: "+18155293269",
+              lastMsg: "Hi this is Aira Fitness Fox Lake...",
+              time: "14 min ago",
+              unread: 0,
+              direction: "out",
+            },
+            {
+              id: 4,
+              name: "Sara Gonzalez",
+              phone: "+12244331430",
+              lastMsg: "Hey its Sarah from aira fitness...",
+              time: "1 hr ago",
+              unread: 0,
+              direction: "out",
+            },
+            {
+              id: 5,
+              name: "Richard Jordan",
+              phone: "+12546276820",
+              lastMsg: "Hey Richard, just wanted to confirm...",
+              time: "2 hr ago",
+              unread: 0,
+              direction: "out",
+            },
+            {
+              id: 6,
+              name: "James Duffy",
+              phone: "+18159701506",
+              lastMsg: "Yall should communicate between your team",
+              time: "Yesterday",
+              unread: 2,
+              direction: "in",
+            },
+            {
+              id: 7,
+              name: "Brittany Morey",
+              phone: "+18479700399",
+              lastMsg: "?",
+              time: "Yesterday",
+              unread: 1,
+              direction: "out",
+            },
+            {
+              id: 8,
+              name: "Iraim Salgado",
+              phone: "+17739717169",
+              lastMsg: "Thank you",
+              time: "Yesterday",
+              unread: 1,
+              direction: "in",
+            },
+            {
+              id: 9,
+              name: "Oscar Marquez",
+              phone: "+12244282669",
+              lastMsg: "Hey yeah I'll probably go again tomorrow...",
+              time: "2 days ago",
+              unread: 3,
+              direction: "in",
+            },
+            {
+              id: 10,
+              name: "Stephanie Edmond",
+              phone: "+18478879349",
+              lastMsg: "Ok",
+              time: "2 days ago",
+              unread: 1,
+              direction: "in",
+            },
+          ],
+          appointments: [
+            {
+              id: 1,
+              name: "Robert Stewart",
+              phone: "+17739603172",
+              time: "11:00 AM",
+              date: "Today",
+              status: "confirmed",
+              type: "Prospect",
+            },
+            {
+              id: 2,
+              name: "Adriana Carbajal",
+              phone: "+18158147202",
+              time: "2:30 PM",
+              date: "Today",
+              status: "confirmed",
+              type: "Prospect",
+            },
+            {
+              id: 3,
+              name: "Jose Tellez",
+              phone: "+18478145673",
+              time: "12:30 PM",
+              date: "Today",
+              status: "cancelled",
+              type: "Prospect",
+            },
+            {
+              id: 4,
+              name: "Christopher Gomez",
+              phone: "+12248142906",
+              time: "4:30 PM",
+              date: "Apr 18",
+              status: "upcoming",
+              type: "Prospect",
+            },
+            {
+              id: 5,
+              name: "James Duffy",
+              phone: "+18159701506",
+              time: "6:30 PM",
+              date: "Apr 18",
+              status: "upcoming",
+              type: "Prospect",
+            },
+            {
+              id: 6,
+              name: "Joseph Moreno",
+              phone: "+15012473595",
+              time: "10:00 AM",
+              date: "Apr 18",
+              status: "upcoming",
+              type: "Prospect",
+            },
+            {
+              id: 7,
+              name: "Lisa Poulsen",
+              phone: "+18477321322",
+              time: "11:30 AM",
+              date: "Apr 20",
+              status: "upcoming",
+              type: "Prospect",
+            },
+            {
+              id: 8,
+              name: "Ashanti Castillo",
+              phone: "+12242823737",
+              time: "12:30 PM",
+              date: "Apr 20",
+              status: "upcoming",
+              type: "Prospect",
+            },
+            {
+              id: 9,
+              name: "Vanessa Lara",
+              phone: "+12246374813",
+              time: "6:30 PM",
+              date: "Apr 20",
+              status: "upcoming",
+              type: "Prospect",
+            },
+            {
+              id: 10,
+              name: "Matthew Shelby",
+              phone: "+18155294316",
+              time: "TBD",
+              date: "Apr 21",
+              status: "upcoming",
+              type: "Prospect",
+            },
+          ],
+          reps: [
+            {
+              name: "Jasmine",
+              role: "Manager",
+              shows: 8,
+              sales: 4,
+              revenue: 934,
+              calls: 12,
+            },
+            {
+              name: "Jenny",
+              role: "Sales Rep",
+              shows: 5,
+              sales: 1,
+              revenue: 267,
+              calls: 8,
+            },
+            {
+              name: "Sami",
+              role: "Sales Rep",
+              shows: 4,
+              sales: 0,
+              revenue: 0,
+              calls: 5,
+            },
+            {
+              name: "Maggie",
+              role: "Sales Rep",
+              shows: 0,
+              sales: 0,
+              revenue: 0,
+              calls: 2,
+            },
+          ],
+        };
+      }
 
-// ── Components ──
-function StatusPill({status}) {
-  const colors = {
-    "New Lead":{bg:T.blueDim,text:T.blue},"Booked":{bg:T.accentDim,text:T.accent},
-    "Confirmed":{bg:T.accentDim,text:T.accent},"No Show":{bg:T.redDim,text:T.red},
-    "Show":{bg:T.yellowDim,text:T.yellow},"Sold":{bg:T.orangeDim,text:T.orange},
-    "7DP Given":{bg:T.blueDim,text:T.blue},"7DP Not Converted":{bg:T.redDim,text:T.red},
-    "Cancelled":{bg:T.redDim,text:T.red},
-  };
-  const c = colors[status]||{bg:T.muted,text:T.dim};
-  return <span style={{display:"inline-block",padding:"3px 10px",borderRadius:6,fontSize:11,fontWeight:700,letterSpacing:"0.03em",background:c.bg,color:c.text}}>{status}</span>;
-}
+      // ── Components ──
+      function StatusPill({ status }) {
+        const colors = {
+          "New Lead": { bg: T.blueDim, text: T.blue },
+          Booked: { bg: T.accentDim, text: T.accent },
+          Confirmed: { bg: T.accentDim, text: T.accent },
+          "No Show": { bg: T.redDim, text: T.red },
+          Show: { bg: T.yellowDim, text: T.yellow },
+          Sold: { bg: T.orangeDim, text: T.orange },
+          "7DP Given": { bg: T.blueDim, text: T.blue },
+          "7DP Not Converted": { bg: T.redDim, text: T.red },
+          Cancelled: { bg: T.redDim, text: T.red },
+        };
+        const c = colors[status] || { bg: T.muted, text: T.dim };
+        return (
+          <span
+            style={{
+              display: "inline-block",
+              padding: "3px 10px",
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "0.03em",
+              background: c.bg,
+              color: c.text,
+            }}
+          >
+            {status}
+          </span>
+        );
+      }
 
-function ActionBtn({icon,label,href,onClick,color=T.accent,small}) {
-  const s = {display:"inline-flex",alignItems:"center",gap:6,padding:small?"8px 14px":"10px 18px",borderRadius:10,border:`1.5px solid ${color}33`,background:`${color}11`,color,fontSize:small?12:13,fontWeight:600,cursor:"pointer",textDecoration:"none",transition:"all 0.15s",letterSpacing:"0.02em"};
-  return href
-    ? <a href={href} style={s}><span style={{fontSize:small?14:16}}>{icon}</span>{label}</a>
-    : <button onClick={onClick} style={s}><span style={{fontSize:small?14:16}}>{icon}</span>{label}</button>;
-}
+      function ActionBtn({
+        icon,
+        label,
+        href,
+        onClick,
+        color = T.accent,
+        small,
+      }) {
+        const s = {
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: small ? "8px 14px" : "10px 18px",
+          borderRadius: 10,
+          border: `1.5px solid ${color}33`,
+          background: `${color}11`,
+          color,
+          fontSize: small ? 12 : 13,
+          fontWeight: 600,
+          cursor: "pointer",
+          textDecoration: "none",
+          transition: "all 0.15s",
+          letterSpacing: "0.02em",
+        };
+        return href ? (
+          <a href={href} style={s}>
+            <span style={{ fontSize: small ? 14 : 16 }}>{icon}</span>
+            {label}
+          </a>
+        ) : (
+          <button onClick={onClick} style={s}>
+            <span style={{ fontSize: small ? 14 : 16 }}>{icon}</span>
+            {label}
+          </button>
+        );
+      }
 
-function KPI({label,value,sub,color=T.accent,icon}) {
-  return (
-    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px",position:"relative",overflow:"hidden"}}>
-      <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${color},transparent)`}} />
-      <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.dim,marginBottom:6,display:"flex",alignItems:"center",gap:5}}>
-        {icon&&<span style={{fontSize:12}}>{icon}</span>}{label}
-      </div>
-      <div style={{fontSize:28,fontWeight:800,color:T.white,lineHeight:1.1,fontFamily:"'Outfit',sans-serif"}}>{value}</div>
-      {sub&&<div style={{fontSize:11,color:T.dim,marginTop:5}}>{sub}</div>}
-    </div>
-  );
-}
-
-function NavItem({icon,label,active,count,onClick}) {
-  return (
-    <button onClick={onClick} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"8px 4px",border:"none",background:"transparent",cursor:"pointer",color:active?T.accent:T.muted,position:"relative",transition:"color 0.15s",flex:1}}>
-      <span style={{fontSize:22,lineHeight:1}}>{icon}</span>
-      <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{label}</span>
-      {count>0&&<span style={{position:"absolute",top:2,right:"50%",transform:"translateX(14px)",background:T.red,color:T.white,fontSize:9,fontWeight:800,padding:"1px 5px",borderRadius:8,minWidth:16,textAlign:"center"}}>{count>99?"99+":count}</span>}
-    </button>
-  );
-}
-
-// ── Dashboard Screen ──
-function DashboardScreen({data}) {
-  const s = data.stats;
-  const showRate = s.shows+s.noShows>0?Math.round((s.shows/(s.shows+s.noShows+s.cancelled))*100):0;
-  const closeRate = s.shows>0?Math.round((s.sales/s.shows)*100):0;
-  const cpl = s.adSpend>0?(s.adSpend/s.totalLeads).toFixed(2):"0.00";
-  const avgSale = s.sales>0?Math.round(s.revenue/s.sales):0;
-
-  const targets = [
-    {label:"Shows",cur:s.shows,tgt:15,color:T.accent},
-    {label:"Sales",cur:s.sales,tgt:15,color:T.orange},
-    {label:"Close Rate",cur:closeRate,tgt:40,color:T.blue,suf:"%"},
-    {label:"Revenue",cur:s.revenue,tgt:10000,color:T.accent,money:true},
-  ];
-
-  return (
-    <div className="fade-in" style={{padding:"20px 16px 24px"}}>
-      <div style={{marginBottom:20}}>
-        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.dim}}>April 2026</div>
-        <div style={{fontSize:22,fontWeight:800,color:T.white,fontFamily:"'Outfit',sans-serif",marginTop:2}}>Performance Dashboard</div>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20}}>
-        <KPI label="Leads" value={s.totalLeads} icon="👥" color={T.blue} sub={`CPL: $${cpl}`} />
-        <KPI label="Shows" value={s.shows} icon="✓" color={T.accent} sub={`${showRate}% show rate`} />
-        <KPI label="No Shows" value={s.noShows} icon="✗" color={T.red} sub={`${s.cancelled} cancelled`} />
-        <KPI label="Sales" value={s.sales} icon="🔥" color={T.orange} sub={`${closeRate}% close rate`} />
-        <KPI label="Revenue" value={`$${s.revenue.toLocaleString()}`} icon="$" color={T.accent} sub={`$${avgSale} avg/sale`} />
-        <KPI label="Ad Spend" value={`$${s.adSpend}`} icon="📣" color={T.yellow} sub={`${s.totalLeads} leads`} />
-      </div>
-
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:20,marginBottom:20}}>
-        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.dim,marginBottom:14}}>🎯 Monthly Targets</div>
-        {targets.map((t,i) => {
-          const pct = Math.min((t.cur/t.tgt)*100,100);
-          const ok = pct>=60;
-          return (
-            <div key={i} style={{marginBottom:i<targets.length-1?14:0}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:12}}>
-                <span style={{color:T.text,fontWeight:600}}>{t.label}</span>
-                <span style={{color:ok?T.accent:T.red,fontWeight:700,fontFamily:"'Outfit',sans-serif"}}>
-                  {t.money?`$${t.cur.toLocaleString()}`:t.cur}{t.suf||""}<span style={{color:T.muted}}> / {t.money?`$${t.tgt.toLocaleString()}`:t.tgt}{t.suf||""}</span>
-                </span>
+      function KPI({ label, value, sub, color = T.accent, icon }) {
+        return (
+          <div
+            style={{
+              background: T.card,
+              border: `1px solid ${T.border}`,
+              borderRadius: 14,
+              padding: "18px 16px",
+              position: "relative",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 2,
+                background: `linear-gradient(90deg,${color},transparent)`,
+              }}
+            />
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: T.dim,
+                marginBottom: 6,
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              {icon && <span style={{ fontSize: 12 }}>{icon}</span>}
+              {label}
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 800,
+                color: T.white,
+                lineHeight: 1.1,
+                fontFamily: "'Outfit',sans-serif",
+              }}
+            >
+              {value}
+            </div>
+            {sub && (
+              <div style={{ fontSize: 11, color: T.dim, marginTop: 5 }}>
+                {sub}
               </div>
-              <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
-                <div style={{width:`${pct}%`,height:"100%",borderRadius:3,background:ok?t.color:T.red,transition:"width 0.8s ease-out"}} />
+            )}
+          </div>
+        );
+      }
+
+      function NavItem({ icon, label, active, count, onClick }) {
+        return (
+          <button
+            onClick={onClick}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 3,
+              padding: "8px 4px",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              color: active ? T.accent : T.muted,
+              position: "relative",
+              transition: "color 0.15s",
+              flex: 1,
+            }}
+          >
+            <span style={{ fontSize: 22, lineHeight: 1 }}>{icon}</span>
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
+            >
+              {label}
+            </span>
+            {count > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: 2,
+                  right: "50%",
+                  transform: "translateX(14px)",
+                  background: T.red,
+                  color: T.white,
+                  fontSize: 9,
+                  fontWeight: 800,
+                  padding: "1px 5px",
+                  borderRadius: 8,
+                  minWidth: 16,
+                  textAlign: "center",
+                }}
+              >
+                {count > 99 ? "99+" : count}
+              </span>
+            )}
+          </button>
+        );
+      }
+
+      // ── Dashboard Screen ──
+      function DashboardScreen({ data, hideLeaderboard }) {
+        const s = data.stats;
+        const showRate =
+          s.shows + s.noShows > 0
+            ? Math.round((s.shows / (s.shows + s.noShows + s.cancelled)) * 100)
+            : 0;
+        const closeRate =
+          s.shows > 0 ? Math.round((s.sales / s.shows) * 100) : 0;
+        const cpl =
+          s.adSpend > 0 ? (s.adSpend / s.totalLeads).toFixed(2) : "0.00";
+        const avgSale = s.sales > 0 ? Math.round(s.revenue / s.sales) : 0;
+
+        const targets = [
+          { label: "Shows", cur: s.shows, tgt: 15, color: T.accent },
+          { label: "Sales", cur: s.sales, tgt: 15, color: T.orange },
+          {
+            label: "Close Rate",
+            cur: closeRate,
+            tgt: 40,
+            color: T.blue,
+            suf: "%",
+          },
+          {
+            label: "Revenue",
+            cur: s.revenue,
+            tgt: 10000,
+            color: T.accent,
+            money: true,
+          },
+        ];
+
+        return (
+          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+            <div style={{ marginBottom: 20 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.dim,
+                }}
+              >
+                April 2026
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: T.white,
+                  fontFamily: "'Outfit',sans-serif",
+                  marginTop: 2,
+                }}
+              >
+                Performance Dashboard
               </div>
             </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 1fr",
+                gap: 10,
+                marginBottom: 20,
+              }}
+            >
+              <KPI
+                label="Leads"
+                value={s.totalLeads}
+                icon="👥"
+                color={T.blue}
+                sub={`CPL: $${cpl}`}
+              />
+              <KPI
+                label="Shows"
+                value={s.shows}
+                icon="✓"
+                color={T.accent}
+                sub={`${showRate}% show rate`}
+              />
+              <KPI
+                label="No Shows"
+                value={s.noShows}
+                icon="✗"
+                color={T.red}
+                sub={`${s.cancelled} cancelled`}
+              />
+              <KPI
+                label="Sales"
+                value={s.sales}
+                icon="🔥"
+                color={T.orange}
+                sub={`${closeRate}% close rate`}
+              />
+              <KPI
+                label="Revenue"
+                value={`$${s.revenue.toLocaleString()}`}
+                icon="$"
+                color={T.accent}
+                sub={`$${avgSale} avg/sale`}
+              />
+              <KPI
+                label="Ad Spend"
+                value={`$${s.adSpend}`}
+                icon="📣"
+                color={T.yellow}
+                sub={`${s.totalLeads} leads`}
+              />
+            </div>
+
+            <div
+              style={{
+                background: T.card,
+                border: `1px solid ${T.border}`,
+                borderRadius: 14,
+                padding: 20,
+                marginBottom: 20,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.dim,
+                  marginBottom: 14,
+                }}
+              >
+                🎯 Monthly Targets
+              </div>
+              {targets.map((t, i) => {
+                const pct = Math.min((t.cur / t.tgt) * 100, 100);
+                const ok = pct >= 60;
+                return (
+                  <div
+                    key={i}
+                    style={{ marginBottom: i < targets.length - 1 ? 14 : 0 }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: 5,
+                        fontSize: 12,
+                      }}
+                    >
+                      <span style={{ color: T.text, fontWeight: 600 }}>
+                        {t.label}
+                      </span>
+                      <span
+                        style={{
+                          color: ok ? T.accent : T.red,
+                          fontWeight: 700,
+                          fontFamily: "'Outfit',sans-serif",
+                        }}
+                      >
+                        {t.money ? `$${t.cur.toLocaleString()}` : t.cur}
+                        {t.suf || ""}
+                        <span style={{ color: T.muted }}>
+                          {" "}
+                          / {t.money ? `$${t.tgt.toLocaleString()}` : t.tgt}
+                          {t.suf || ""}
+                        </span>
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        height: 6,
+                        background: T.border,
+                        borderRadius: 3,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${pct}%`,
+                          height: "100%",
+                          borderRadius: 3,
+                          background: ok ? t.color : T.red,
+                          transition: "width 0.8s ease-out",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {!hideLeaderboard && (
+              <div
+                style={{
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 14,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "16px 20px 12px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    color: T.dim,
+                  }}
+                >
+                  🏆 Rep Leaderboard
+                </div>
+                {data.reps.map((r, i) => {
+                  const cr =
+                    r.shows > 0 ? Math.round((r.sales / r.shows) * 100) : 0;
+                  const colors = [T.accent, T.orange, T.purple, T.blue];
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "12px 20px",
+                        borderTop: `1px solid ${T.border}`,
+                        gap: 12,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: "50%",
+                          background: `${colors[i]}22`,
+                          border: `2px solid ${colors[i]}44`,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 14,
+                          fontWeight: 800,
+                          color: colors[i],
+                        }}
+                      >
+                        {r.name[0]}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 700,
+                            color: T.white,
+                          }}
+                        >
+                          {r.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: T.dim }}>
+                          {r.role}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "center", minWidth: 40 }}>
+                        <div
+                          style={{
+                            fontSize: 16,
+                            fontWeight: 800,
+                            color: T.white,
+                            fontFamily: "'Outfit',sans-serif",
+                          }}
+                        >
+                          {r.sales}
+                        </div>
+                        <div style={{ fontSize: 9, color: T.dim }}>SALES</div>
+                      </div>
+                      <div style={{ textAlign: "center", minWidth: 40 }}>
+                        <span
+                          style={{
+                            padding: "3px 8px",
+                            borderRadius: 5,
+                            fontSize: 11,
+                            fontWeight: 800,
+                            background: cr >= 40 ? T.accentDim : T.redDim,
+                            color: cr >= 40 ? T.accent : T.red,
+                          }}
+                        >
+                          {cr}%
+                        </span>
+                        <div
+                          style={{ fontSize: 9, color: T.dim, marginTop: 2 }}
+                        >
+                          CLOSE
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "center", minWidth: 48 }}>
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color: T.accent,
+                            fontFamily: "'Outfit',sans-serif",
+                          }}
+                        >
+                          ${r.revenue}
+                        </div>
+                        <div style={{ fontSize: 9, color: T.dim }}>REV</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      // ── Leads Screen ──
+      function LeadsScreen({ data, onSelect }) {
+        const [filter, setFilter] = useState("All");
+        const [search, setSearch] = useState("");
+        const filters = [
+          "All",
+          "New Lead",
+          "Booked",
+          "Show",
+          "No Show",
+          "Sold",
+          "7DP Given",
+        ];
+        let filtered = data.leads;
+        if (filter !== "All")
+          filtered = filtered.filter((l) => l.status === filter);
+        if (search)
+          filtered = filtered.filter((l) =>
+            `${l.first} ${l.last}`.toLowerCase().includes(search.toLowerCase()),
           );
-        })}
-      </div>
 
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-        <div style={{padding:"16px 20px 12px",fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.dim}}>🏆 Rep Leaderboard</div>
-        {data.reps.map((r,i) => {
-          const cr = r.shows>0?Math.round((r.sales/r.shows)*100):0;
-          const colors = [T.accent,T.orange,T.purple,T.blue];
-          return (
-            <div key={i} style={{display:"flex",alignItems:"center",padding:"12px 20px",borderTop:`1px solid ${T.border}`,gap:12}}>
-              <div style={{width:36,height:36,borderRadius:"50%",background:`${colors[i]}22`,border:`2px solid ${colors[i]}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:colors[i]}}>{r.name[0]}</div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.white}}>{r.name}</div>
-                <div style={{fontSize:11,color:T.dim}}>{r.role}</div>
-              </div>
-              <div style={{textAlign:"center",minWidth:40}}>
-                <div style={{fontSize:16,fontWeight:800,color:T.white,fontFamily:"'Outfit',sans-serif"}}>{r.sales}</div>
-                <div style={{fontSize:9,color:T.dim}}>SALES</div>
-              </div>
-              <div style={{textAlign:"center",minWidth:40}}>
-                <span style={{padding:"3px 8px",borderRadius:5,fontSize:11,fontWeight:800,background:cr>=40?T.accentDim:T.redDim,color:cr>=40?T.accent:T.red}}>{cr}%</span>
-                <div style={{fontSize:9,color:T.dim,marginTop:2}}>CLOSE</div>
-              </div>
-              <div style={{textAlign:"center",minWidth:48}}>
-                <div style={{fontSize:14,fontWeight:800,color:T.accent,fontFamily:"'Outfit',sans-serif"}}>${r.revenue}</div>
-                <div style={{fontSize:9,color:T.dim}}>REV</div>
-              </div>
+        return (
+          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 800,
+                color: T.white,
+                fontFamily: "'Outfit',sans-serif",
+                marginBottom: 16,
+              }}
+            >
+              Leads
             </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Leads Screen ──
-function LeadsScreen({data,onSelect}) {
-  const [filter,setFilter] = useState("All");
-  const [search,setSearch] = useState("");
-  const filters = ["All","New Lead","Booked","Show","No Show","Sold","7DP Given"];
-  let filtered = data.leads;
-  if(filter!=="All") filtered=filtered.filter(l=>l.status===filter);
-  if(search) filtered=filtered.filter(l=>`${l.first} ${l.last}`.toLowerCase().includes(search.toLowerCase()));
-
-  return (
-    <div className="fade-in" style={{padding:"20px 16px 24px"}}>
-      <div style={{fontSize:22,fontWeight:800,color:T.white,fontFamily:"'Outfit',sans-serif",marginBottom:16}}>Leads</div>
-      <div style={{position:"relative",marginBottom:12}}>
-        <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:16,color:T.muted}}>🔍</span>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search leads..." style={{width:"100%",padding:"12px 16px 12px 42px",borderRadius:12,border:`1px solid ${T.border}`,background:T.card,color:T.text,fontSize:14,outline:"none",boxSizing:"border-box"}} />
-      </div>
-      <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:12,marginBottom:8}}>
-        {filters.map(f=>(
-          <button key={f} onClick={()=>setFilter(f)} style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${filter===f?T.accent:T.border}`,background:filter===f?T.accentDim:"transparent",color:filter===f?T.accent:T.dim,fontSize:12,fontWeight:600,whiteSpace:"nowrap",cursor:"pointer"}}>{f}</button>
-        ))}
-      </div>
-      {filtered.map(lead=>(
-        <div key={lead.id} onClick={()=>onSelect(lead)} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px",marginBottom:10,cursor:"pointer",transition:"border-color 0.15s"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-            <div>
-              <div style={{fontSize:15,fontWeight:700,color:T.white}}>{lead.first} {lead.last}</div>
-              <div style={{fontSize:12,color:T.dim,marginTop:2}}>{lead.source} · {lead.date}</div>
+            <div style={{ position: "relative", marginBottom: 12 }}>
+              <span
+                style={{
+                  position: "absolute",
+                  left: 14,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  fontSize: 16,
+                  color: T.muted,
+                }}
+              >
+                🔍
+              </span>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search leads..."
+                style={{
+                  width: "100%",
+                  padding: "12px 16px 12px 42px",
+                  borderRadius: 12,
+                  border: `1px solid ${T.border}`,
+                  background: T.card,
+                  color: T.text,
+                  fontSize: 14,
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
             </div>
-            <StatusPill status={lead.status} />
-          </div>
-          {lead.assigned&&<div style={{fontSize:11,color:T.dim}}>Assigned: <span style={{color:T.text,fontWeight:600}}>{lead.assigned}</span></div>}
-          {lead.aptDate&&<div style={{fontSize:11,color:T.dim}}>Appt: <span style={{color:T.accent}}>{lead.aptDate}</span></div>}
-          {lead.notes&&<div style={{fontSize:11,color:T.yellow,marginTop:4,fontStyle:"italic"}}>{lead.notes}</div>}
-          <div style={{display:"flex",gap:8,marginTop:12}}>
-            <ActionBtn icon="📞" label="Call" href={`tel:${lead.phone}`} color={T.accent} small />
-            <ActionBtn icon="💬" label="Text" href={`sms:${lead.phone}`} color={T.blue} small />
-          </div>
-        </div>
-      ))}
-      {filtered.length===0&&<div style={{textAlign:"center",color:T.muted,padding:40,fontSize:14}}>No leads match this filter</div>}
-    </div>
-  );
-}
-
-// ── Lead Detail ──
-function LeadDetail({lead,onBack}) {
-  const [newStatus,setNewStatus] = useState(lead.status);
-  const statuses = ["New Lead","Booked","Confirmed","Show","No Show","Sold","7DP Given","7DP Not Converted","Cancelled"];
-
-  return (
-    <div className="fade-in" style={{padding:"20px 16px 24px"}}>
-      <button onClick={onBack} style={{background:"transparent",border:"none",color:T.dim,fontSize:13,cursor:"pointer",padding:"4px 0",marginBottom:16,display:"flex",alignItems:"center",gap:6}}>← Back to Leads</button>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,marginBottom:16}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-          <div>
-            <div style={{fontSize:24,fontWeight:800,color:T.white,fontFamily:"'Outfit',sans-serif"}}>{lead.first} {lead.last}</div>
-            <div style={{fontSize:13,color:T.dim,marginTop:4}}>{lead.source} · {lead.date}</div>
-          </div>
-          <StatusPill status={newStatus} />
-        </div>
-        <div style={{marginTop:20,display:"flex",flexDirection:"column",gap:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,fontSize:14}}>
-            <span>📱</span><a href={`tel:${lead.phone}`} style={{color:T.accent,fontWeight:600}}>{lead.phone}</a>
-          </div>
-          {lead.email&&<div style={{display:"flex",alignItems:"center",gap:10,fontSize:14}}><span>✉️</span><span style={{color:T.text}}>{lead.email}</span></div>}
-          {lead.assigned&&<div style={{display:"flex",alignItems:"center",gap:10,fontSize:14}}><span>👤</span><span style={{color:T.text}}>Assigned to <strong>{lead.assigned}</strong></span></div>}
-          {lead.aptDate&&<div style={{display:"flex",alignItems:"center",gap:10,fontSize:14}}><span>📅</span><span style={{color:T.text}}>Appointment: <strong style={{color:T.accent}}>{lead.aptDate}</strong></span></div>}
-        </div>
-        <div style={{display:"flex",gap:10,marginTop:24}}>
-          <ActionBtn icon="📞" label="Call Now" href={`tel:${lead.phone}`} color={T.accent} />
-          <ActionBtn icon="💬" label="Text" href={`sms:${lead.phone}`} color={T.blue} />
-        </div>
-      </div>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:20,marginBottom:16}}>
-        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.dim,marginBottom:12}}>Update Status</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {statuses.map(s=>(
-            <button key={s} onClick={()=>setNewStatus(s)} style={{padding:"8px 14px",borderRadius:8,border:`1.5px solid ${newStatus===s?T.accent:T.border}`,background:newStatus===s?T.accentDim:"transparent",color:newStatus===s?T.accent:T.dim,fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s"}}>{STATUS_ICONS[s]||"○"} {s}</button>
-          ))}
-        </div>
-        {newStatus!==lead.status&&<button style={{width:"100%",marginTop:14,padding:"12px",borderRadius:10,border:"none",background:`linear-gradient(135deg,${T.accent},${T.blue})`,color:T.bg,fontSize:14,fontWeight:700,cursor:"pointer"}}>Save Status → {newStatus}</button>}
-      </div>
-      {lead.notes&&<div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:20}}><div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.dim,marginBottom:8}}>Notes</div><div style={{fontSize:14,color:T.text,lineHeight:1.6}}>{lead.notes}</div></div>}
-    </div>
-  );
-}
-
-// ── Conversations Screen ──
-function ConversationsScreen({data}) {
-  const [selected,setSelected] = useState(null);
-  const [reply,setReply] = useState("");
-
-  if(selected) {
-    return (
-      <div className="fade-in" style={{padding:"20px 16px 24px"}}>
-        <button onClick={()=>setSelected(null)} style={{background:"transparent",border:"none",color:T.dim,fontSize:13,cursor:"pointer",padding:"4px 0",marginBottom:16}}>← Back</button>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-          <div>
-            <div style={{fontSize:20,fontWeight:800,color:T.white,fontFamily:"'Outfit',sans-serif"}}>{selected.name}</div>
-            <div style={{fontSize:12,color:T.dim}}>{selected.phone}</div>
-          </div>
-          <ActionBtn icon="📞" label="Call" href={`tel:${selected.phone}`} color={T.accent} small />
-        </div>
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:20,minHeight:300,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
-          <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{alignSelf:selected.direction==="in"?"flex-start":"flex-end",maxWidth:"80%",padding:"10px 16px",borderRadius:14,background:selected.direction==="in"?T.surface:T.accentDim,color:selected.direction==="in"?T.text:T.accent,fontSize:14}}>{selected.lastMsg}</div>
-            <div style={{alignSelf:selected.direction==="in"?"flex-start":"flex-end",fontSize:10,color:T.muted}}>{selected.time}</div>
-          </div>
-        </div>
-        <div style={{display:"flex",gap:8,marginTop:12}}>
-          <input value={reply} onChange={e=>setReply(e.target.value)} placeholder="Type a message..." style={{flex:1,padding:"12px 16px",borderRadius:12,border:`1px solid ${T.border}`,background:T.card,color:T.text,fontSize:14,outline:"none"}} />
-          <button style={{padding:"12px 20px",borderRadius:12,border:"none",background:T.accent,color:T.bg,fontSize:14,fontWeight:700,cursor:"pointer"}}>Send</button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fade-in" style={{padding:"20px 16px 24px"}}>
-      <div style={{fontSize:22,fontWeight:800,color:T.white,fontFamily:"'Outfit',sans-serif",marginBottom:16}}>Conversations</div>
-      {data.conversations.map(c=>(
-        <div key={c.id} onClick={()=>setSelected(c)} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",background:T.card,border:`1px solid ${c.unread>0?T.accent+"33":T.border}`,borderRadius:14,marginBottom:8,cursor:"pointer",transition:"border-color 0.15s"}}>
-          <div style={{width:42,height:42,borderRadius:"50%",background:c.unread>0?T.accentDim:T.surface,border:`2px solid ${c.unread>0?T.accent+"44":T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:c.unread>0?T.accent:T.dim,flexShrink:0}}>{c.name[0]}</div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:14,fontWeight:c.unread>0?700:500,color:c.unread>0?T.white:T.text}}>{c.name}</span>
-              <span style={{fontSize:11,color:T.muted,flexShrink:0,marginLeft:8}}>{c.time}</span>
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                overflowX: "auto",
+                paddingBottom: 12,
+                marginBottom: 8,
+              }}
+            >
+              {filters.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 8,
+                    border: `1px solid ${filter === f ? T.accent : T.border}`,
+                    background: filter === f ? T.accentDim : "transparent",
+                    color: filter === f ? T.accent : T.dim,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    cursor: "pointer",
+                  }}
+                >
+                  {f}
+                </button>
+              ))}
             </div>
-            <div style={{fontSize:13,color:T.dim,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-              {c.direction==="out"&&<span style={{color:T.muted}}>You: </span>}{c.lastMsg}
-            </div>
+            {filtered.map((lead) => (
+              <div
+                key={lead.id}
+                onClick={() => onSelect(lead)}
+                style={{
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 14,
+                  padding: "16px 18px",
+                  marginBottom: 10,
+                  cursor: "pointer",
+                  transition: "border-color 0.15s",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    marginBottom: 8,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{ fontSize: 15, fontWeight: 700, color: T.white }}
+                    >
+                      {lead.first} {lead.last}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.dim, marginTop: 2 }}>
+                      {lead.source} · {lead.date}
+                    </div>
+                  </div>
+                  <StatusPill status={lead.status} />
+                </div>
+                {lead.assigned && (
+                  <div style={{ fontSize: 11, color: T.dim }}>
+                    Assigned:{" "}
+                    <span style={{ color: T.text, fontWeight: 600 }}>
+                      {lead.assigned}
+                    </span>
+                  </div>
+                )}
+                {lead.aptDate && (
+                  <div style={{ fontSize: 11, color: T.dim }}>
+                    Appt:{" "}
+                    <span style={{ color: T.accent }}>{lead.aptDate}</span>
+                  </div>
+                )}
+                {lead.notes && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: T.yellow,
+                      marginTop: 4,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    {lead.notes}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <ActionBtn
+                    icon="📞"
+                    label="Call"
+                    href={`tel:${lead.phone}`}
+                    color={T.accent}
+                    small
+                  />
+                  <ActionBtn
+                    icon="💬"
+                    label="Text"
+                    href={`sms:${lead.phone}`}
+                    color={T.blue}
+                    small
+                  />
+                </div>
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <div
+                style={{
+                  textAlign: "center",
+                  color: T.muted,
+                  padding: 40,
+                  fontSize: 14,
+                }}
+              >
+                No leads match this filter
+              </div>
+            )}
           </div>
-          {c.unread>0&&<div style={{background:T.accent,color:T.bg,fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:10,flexShrink:0}}>{c.unread}</div>}
-        </div>
-      ))}
-    </div>
-  );
-}
+        );
+      }
 
-// ── Appointments Screen ──
-function AppointmentsScreen({data}) {
-  const statusStyles = {confirmed:{bg:T.accentDim,color:T.accent,label:"Confirmed"},upcoming:{bg:T.blueDim,color:T.blue,label:"Upcoming"},cancelled:{bg:T.redDim,color:T.red,label:"Cancelled"}};
-  const grouped = {};
-  data.appointments.forEach(a=>{if(!grouped[a.date])grouped[a.date]=[];grouped[a.date].push(a);});
+      // ── Lead Detail ──
+      function LeadDetail({ lead, onBack }) {
+        const [newStatus, setNewStatus] = useState(lead.status);
+        const statuses = [
+          "New Lead",
+          "Booked",
+          "Confirmed",
+          "Show",
+          "No Show",
+          "Sold",
+          "7DP Given",
+          "7DP Not Converted",
+          "Cancelled",
+        ];
 
-  return (
-    <div className="fade-in" style={{padding:"20px 16px 24px"}}>
-      <div style={{fontSize:22,fontWeight:800,color:T.white,fontFamily:"'Outfit',sans-serif",marginBottom:4}}>Appointments</div>
-      <div style={{fontSize:12,color:T.dim,marginBottom:20}}>{data.appointments.length} scheduled</div>
-      {Object.entries(grouped).map(([date,apts])=>(
-        <div key={date} style={{marginBottom:20}}>
-          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:date==="Today"?T.accent:T.dim,marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
-            {date==="Today"&&<span style={{width:6,height:6,borderRadius:"50%",background:T.accent,animation:"pulse 2s infinite"}} />}{date}
-          </div>
-          {apts.map(a=>{
-            const st = statusStyles[a.status]||statusStyles.upcoming;
-            return (
-              <div key={a.id} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",background:T.card,border:`1px solid ${T.border}`,borderRadius:14,marginBottom:8}}>
-                <div style={{minWidth:56,textAlign:"center"}}><div style={{fontSize:16,fontWeight:800,color:T.white,fontFamily:"'Outfit',sans-serif"}}>{a.time}</div></div>
-                <div style={{width:1,height:36,background:T.border}} />
-                <div style={{flex:1}}>
-                  <div style={{fontSize:14,fontWeight:700,color:T.white}}>{a.name}</div>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
-                    <span style={{fontSize:11,color:T.dim}}>{a.type}</span>
-                    <span style={{padding:"2px 8px",borderRadius:5,fontSize:10,fontWeight:700,background:st.bg,color:st.color}}>{st.label}</span>
+        return (
+          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+            <button
+              onClick={onBack}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: T.dim,
+                fontSize: 13,
+                cursor: "pointer",
+                padding: "4px 0",
+                marginBottom: 16,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              ← Back to Leads
+            </button>
+            <div
+              style={{
+                background: T.card,
+                border: `1px solid ${T.border}`,
+                borderRadius: 16,
+                padding: 24,
+                marginBottom: 16,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 24,
+                      fontWeight: 800,
+                      color: T.white,
+                      fontFamily: "'Outfit',sans-serif",
+                    }}
+                  >
+                    {lead.first} {lead.last}
+                  </div>
+                  <div style={{ fontSize: 13, color: T.dim, marginTop: 4 }}>
+                    {lead.source} · {lead.date}
                   </div>
                 </div>
-                <div style={{display:"flex",gap:6}}>
-                  <a href={`tel:${a.phone}`} style={{width:38,height:38,borderRadius:10,background:T.accentDim,border:`1px solid ${T.accent}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:T.accent}}>📞</a>
-                  <a href={`sms:${a.phone}`} style={{width:38,height:38,borderRadius:10,background:T.blueDim,border:`1px solid ${T.blue}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:T.blue}}>💬</a>
+                <StatusPill status={newStatus} />
+              </div>
+              <div
+                style={{
+                  marginTop: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    fontSize: 14,
+                  }}
+                >
+                  <span>📱</span>
+                  <a
+                    href={`tel:${lead.phone}`}
+                    style={{ color: T.accent, fontWeight: 600 }}
+                  >
+                    {lead.phone}
+                  </a>
+                </div>
+                {lead.email && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      fontSize: 14,
+                    }}
+                  >
+                    <span>✉️</span>
+                    <span style={{ color: T.text }}>{lead.email}</span>
+                  </div>
+                )}
+                {lead.assigned && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      fontSize: 14,
+                    }}
+                  >
+                    <span>👤</span>
+                    <span style={{ color: T.text }}>
+                      Assigned to <strong>{lead.assigned}</strong>
+                    </span>
+                  </div>
+                )}
+                {lead.aptDate && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      fontSize: 14,
+                    }}
+                  >
+                    <span>📅</span>
+                    <span style={{ color: T.text }}>
+                      Appointment:{" "}
+                      <strong style={{ color: T.accent }}>
+                        {lead.aptDate}
+                      </strong>
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+                <ActionBtn
+                  icon="📞"
+                  label="Call Now"
+                  href={`tel:${lead.phone}`}
+                  color={T.accent}
+                />
+                <ActionBtn
+                  icon="💬"
+                  label="Text"
+                  href={`sms:${lead.phone}`}
+                  color={T.blue}
+                />
+              </div>
+            </div>
+            <div
+              style={{
+                background: T.card,
+                border: `1px solid ${T.border}`,
+                borderRadius: 16,
+                padding: 20,
+                marginBottom: 16,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.dim,
+                  marginBottom: 12,
+                }}
+              >
+                Update Status
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {statuses.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setNewStatus(s)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 8,
+                      border: `1.5px solid ${newStatus === s ? T.accent : T.border}`,
+                      background: newStatus === s ? T.accentDim : "transparent",
+                      color: newStatus === s ? T.accent : T.dim,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {STATUS_ICONS[s] || "○"} {s}
+                  </button>
+                ))}
+              </div>
+              {newStatus !== lead.status && (
+                <button
+                  style={{
+                    width: "100%",
+                    marginTop: 14,
+                    padding: "12px",
+                    borderRadius: 10,
+                    border: "none",
+                    background: `linear-gradient(135deg,${T.accent},${T.blue})`,
+                    color: T.bg,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Save Status → {newStatus}
+                </button>
+              )}
+            </div>
+            {lead.notes && (
+              <div
+                style={{
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 16,
+                  padding: 20,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    color: T.dim,
+                    marginBottom: 8,
+                  }}
+                >
+                  Notes
+                </div>
+                <div style={{ fontSize: 14, color: T.text, lineHeight: 1.6 }}>
+                  {lead.notes}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── Main App ──
-function App() {
-  const [screen,setScreen] = useState("dashboard");
-  const [selectedLead,setSelectedLead] = useState(null);
-  const data = getSeedData();
-  const unreadCount = data.conversations.reduce((s,c)=>s+c.unread,0);
-
-  const renderScreen = () => {
-    if(selectedLead) return <LeadDetail lead={selectedLead} onBack={()=>setSelectedLead(null)} />;
-    switch(screen) {
-      case "dashboard": return <DashboardScreen data={data} />;
-      case "leads": return <LeadsScreen data={data} onSelect={l=>setSelectedLead(l)} />;
-      case "conversations": return <ConversationsScreen data={data} />;
-      case "appointments": return <AppointmentsScreen data={data} />;
-      default: return <DashboardScreen data={data} />;
-    }
-  };
-
-  return (
-    <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",background:T.bg,color:T.text,position:"relative"}}>
-      {/* Header */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 20px 10px",background:`linear-gradient(135deg,${T.surface},${T.bg})`,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:50}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:30,height:30,borderRadius:8,background:`linear-gradient(135deg,${T.accent},${T.orange})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:900,color:T.bg}}>A</div>
-          <div>
-            <div style={{fontSize:14,fontWeight:700,color:T.white,letterSpacing:"-0.01em"}}>AIRA FITNESS</div>
-            <div style={{fontSize:10,color:T.dim,letterSpacing:"0.04em"}}>Fox Lake</div>
+            )}
           </div>
-        </div>
-        <div style={{fontSize:10,color:T.muted}}>April 17, 2026</div>
-      </div>
+        );
+      }
 
-      <div style={{paddingBottom:72}}>{renderScreen()}</div>
+      // ── Conversations Screen ──
+      function ConversationsScreen({ data }) {
+        const [selected, setSelected] = useState(null);
+        const [reply, setReply] = useState("");
 
-      {/* Bottom Nav */}
-      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,display:"flex",justifyContent:"space-around",padding:"8px 0 env(safe-area-inset-bottom, 12px)",background:`${T.surface}f0`,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:`1px solid ${T.border}`,zIndex:100}}>
-        <NavItem icon="📊" label="Dashboard" active={screen==="dashboard"&&!selectedLead} onClick={()=>{setScreen("dashboard");setSelectedLead(null);}} />
-        <NavItem icon="👥" label="Leads" active={screen==="leads"||!!selectedLead} onClick={()=>{setScreen("leads");setSelectedLead(null);}} count={data.leads.filter(l=>l.status==="New Lead").length} />
-        <NavItem icon="💬" label="Messages" active={screen==="conversations"} onClick={()=>{setScreen("conversations");setSelectedLead(null);}} count={unreadCount} />
-        <NavItem icon="📅" label="Appts" active={screen==="appointments"} onClick={()=>{setScreen("appointments");setSelectedLead(null);}} count={data.appointments.filter(a=>a.date==="Today").length} />
-      </div>
-    </div>
-  );
-}
+        if (selected) {
+          return (
+            <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+              <button
+                onClick={() => setSelected(null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: T.dim,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  padding: "4px 0",
+                  marginBottom: 16,
+                }}
+              >
+                ← Back
+              </button>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 20,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 20,
+                      fontWeight: 800,
+                      color: T.white,
+                      fontFamily: "'Outfit',sans-serif",
+                    }}
+                  >
+                    {selected.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: T.dim }}>
+                    {selected.phone}
+                  </div>
+                </div>
+                <ActionBtn
+                  icon="📞"
+                  label="Call"
+                  href={`tel:${selected.phone}`}
+                  color={T.accent}
+                  small
+                />
+              </div>
+              <div
+                style={{
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 14,
+                  padding: 20,
+                  minHeight: 300,
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <div
+                  style={{
+                    marginBottom: 16,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      alignSelf:
+                        selected.direction === "in" ? "flex-start" : "flex-end",
+                      maxWidth: "80%",
+                      padding: "10px 16px",
+                      borderRadius: 14,
+                      background:
+                        selected.direction === "in" ? T.surface : T.accentDim,
+                      color: selected.direction === "in" ? T.text : T.accent,
+                      fontSize: 14,
+                    }}
+                  >
+                    {selected.lastMsg}
+                  </div>
+                  <div
+                    style={{
+                      alignSelf:
+                        selected.direction === "in" ? "flex-start" : "flex-end",
+                      fontSize: 10,
+                      color: T.muted,
+                    }}
+                  >
+                    {selected.time}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <input
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  placeholder="Type a message..."
+                  style={{
+                    flex: 1,
+                    padding: "12px 16px",
+                    borderRadius: 12,
+                    border: `1px solid ${T.border}`,
+                    background: T.card,
+                    color: T.text,
+                    fontSize: 14,
+                    outline: "none",
+                  }}
+                />
+                <button
+                  style={{
+                    padding: "12px 20px",
+                    borderRadius: 12,
+                    border: "none",
+                    background: T.accent,
+                    color: T.bg,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          );
+        }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-  </script>
-</body>
+        return (
+          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 800,
+                color: T.white,
+                fontFamily: "'Outfit',sans-serif",
+                marginBottom: 16,
+              }}
+            >
+              Conversations
+            </div>
+            {data.conversations.map((c) => (
+              <div
+                key={c.id}
+                onClick={() => setSelected(c)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  padding: "14px 16px",
+                  background: T.card,
+                  border: `1px solid ${c.unread > 0 ? T.accent + "33" : T.border}`,
+                  borderRadius: 14,
+                  marginBottom: 8,
+                  cursor: "pointer",
+                  transition: "border-color 0.15s",
+                }}
+              >
+                <div
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: "50%",
+                    background: c.unread > 0 ? T.accentDim : T.surface,
+                    border: `2px solid ${c.unread > 0 ? T.accent + "44" : T.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 16,
+                    fontWeight: 800,
+                    color: c.unread > 0 ? T.accent : T.dim,
+                    flexShrink: 0,
+                  }}
+                >
+                  {c.name[0]}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 14,
+                        fontWeight: c.unread > 0 ? 700 : 500,
+                        color: c.unread > 0 ? T.white : T.text,
+                      }}
+                    >
+                      {c.name}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: T.muted,
+                        flexShrink: 0,
+                        marginLeft: 8,
+                      }}
+                    >
+                      {c.time}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: T.dim,
+                      marginTop: 2,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {c.direction === "out" && (
+                      <span style={{ color: T.muted }}>You: </span>
+                    )}
+                    {c.lastMsg}
+                  </div>
+                </div>
+                {c.unread > 0 && (
+                  <div
+                    style={{
+                      background: T.accent,
+                      color: T.bg,
+                      fontSize: 10,
+                      fontWeight: 800,
+                      padding: "2px 7px",
+                      borderRadius: 10,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {c.unread}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      // ── Appointments Screen ──
+      function AppointmentsScreen({ data }) {
+        const statusStyles = {
+          confirmed: { bg: T.accentDim, color: T.accent, label: "Confirmed" },
+          upcoming: { bg: T.blueDim, color: T.blue, label: "Upcoming" },
+          cancelled: { bg: T.redDim, color: T.red, label: "Cancelled" },
+        };
+        const grouped = {};
+        data.appointments.forEach((a) => {
+          if (!grouped[a.date]) grouped[a.date] = [];
+          grouped[a.date].push(a);
+        });
+
+        return (
+          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 800,
+                color: T.white,
+                fontFamily: "'Outfit',sans-serif",
+                marginBottom: 4,
+              }}
+            >
+              Appointments
+            </div>
+            <div style={{ fontSize: 12, color: T.dim, marginBottom: 20 }}>
+              {data.appointments.length} scheduled
+            </div>
+            {Object.entries(grouped).map(([date, apts]) => (
+              <div key={date} style={{ marginBottom: 20 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: date === "Today" ? T.accent : T.dim,
+                    marginBottom: 10,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  {date === "Today" && (
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: T.accent,
+                        animation: "pulse 2s infinite",
+                      }}
+                    />
+                  )}
+                  {date}
+                </div>
+                {apts.map((a) => {
+                  const st = statusStyles[a.status] || statusStyles.upcoming;
+                  return (
+                    <div
+                      key={a.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 14,
+                        padding: "14px 18px",
+                        background: T.card,
+                        border: `1px solid ${T.border}`,
+                        borderRadius: 14,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div style={{ minWidth: 56, textAlign: "center" }}>
+                        <div
+                          style={{
+                            fontSize: 16,
+                            fontWeight: 800,
+                            color: T.white,
+                            fontFamily: "'Outfit',sans-serif",
+                          }}
+                        >
+                          {a.time}
+                        </div>
+                      </div>
+                      <div
+                        style={{ width: 1, height: 36, background: T.border }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 700,
+                            color: T.white,
+                          }}
+                        >
+                          {a.name}
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            marginTop: 4,
+                          }}
+                        >
+                          <span style={{ fontSize: 11, color: T.dim }}>
+                            {a.type}
+                          </span>
+                          <span
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: 5,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              background: st.bg,
+                              color: st.color,
+                            }}
+                          >
+                            {st.label}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <a
+                          href={`tel:${a.phone}`}
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 10,
+                            background: T.accentDim,
+                            border: `1px solid ${T.accent}33`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 16,
+                            color: T.accent,
+                          }}
+                        >
+                          📞
+                        </a>
+                        <a
+                          href={`sms:${a.phone}`}
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 10,
+                            background: T.blueDim,
+                            border: `1px solid ${T.blue}33`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 16,
+                            color: T.blue,
+                          }}
+                        >
+                          💬
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      // ── Splash ──
+      function Splash() {
+        return (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              background: T.bg,
+              gap: 18,
+            }}
+          >
+            <div
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: 14,
+                background: `linear-gradient(135deg,${T.accent},${T.orange})`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 26,
+                fontWeight: 900,
+                color: T.bg,
+                fontFamily: "'Outfit',sans-serif",
+              }}
+            >
+              A
+            </div>
+            <div
+              className="spinner"
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: "50%",
+                border: `3px solid ${T.border}`,
+                borderTopColor: T.accent,
+              }}
+            />
+          </div>
+        );
+      }
+
+      // ── Login Screen ──
+      function LoginScreen() {
+        const [email, setEmail] = useState("");
+        const [password, setPassword] = useState("");
+        const [loading, setLoading] = useState(false);
+        const [error, setError] = useState("");
+        const [info, setInfo] = useState("");
+
+        const handleLogin = async (e) => {
+          e.preventDefault();
+          if (!email || !password) return;
+          setLoading(true);
+          setError("");
+          setInfo("");
+          const { error: err } = await window.supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password,
+          });
+          if (err) {
+            setError("Invalid email or password");
+            setLoading(false);
+            return;
+          }
+          // success: leave loading true — onAuthStateChange will switch screens
+        };
+
+        const handleReset = async () => {
+          if (!email) {
+            setError("Enter your email first, then tap Forgot password.");
+            return;
+          }
+          setLoading(true);
+          setError("");
+          setInfo("");
+          const redirectTo = window.location.origin + window.location.pathname;
+          const { error: err } =
+            await window.supabase.auth.resetPasswordForEmail(email.trim(), {
+              redirectTo,
+            });
+          setLoading(false);
+          if (err) {
+            setError(err.message || "Unable to send reset email.");
+            return;
+          }
+          setInfo("Check your email for a reset link.");
+        };
+
+        return (
+          <div
+            style={{
+              maxWidth: 480,
+              margin: "0 auto",
+              minHeight: "100vh",
+              background: T.bg,
+              padding: "60px 24px 40px",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                marginBottom: 36,
+              }}
+            >
+              <div
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 16,
+                  background: `linear-gradient(135deg,${T.accent},${T.orange})`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 30,
+                  fontWeight: 900,
+                  color: T.bg,
+                  fontFamily: "'Outfit',sans-serif",
+                  marginBottom: 16,
+                }}
+              >
+                A
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: T.white,
+                  fontFamily: "'Outfit',sans-serif",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                AIRA FITNESS
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: T.dim,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  marginTop: 4,
+                }}
+              >
+                Operator Portal
+              </div>
+            </div>
+            <form
+              onSubmit={handleLogin}
+              style={{
+                background: T.card,
+                border: `1px solid ${T.border}`,
+                borderRadius: 16,
+                padding: 22,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              <label
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.dim,
+                }}
+              >
+                Email
+              </label>
+              <input
+                type="email"
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@airafitness.com"
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${T.border}`,
+                  background: T.surface,
+                  color: T.text,
+                  fontSize: 15,
+                  outline: "none",
+                }}
+              />
+              <label
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.dim,
+                  marginTop: 4,
+                }}
+              >
+                Password
+              </label>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${T.border}`,
+                  background: T.surface,
+                  color: T.text,
+                  fontSize: 15,
+                  outline: "none",
+                }}
+              />
+              {error && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: T.redDim,
+                    border: `1px solid ${T.red}33`,
+                    color: T.red,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+              {info && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: T.accentDim,
+                    border: `1px solid ${T.accent}33`,
+                    color: T.accent,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {info}
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={loading || !email || !password}
+                style={{
+                  marginTop: 8,
+                  padding: "14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background:
+                    loading || !email || !password
+                      ? T.muted
+                      : `linear-gradient(135deg,${T.accent},${T.blue})`,
+                  color: T.bg,
+                  fontSize: 14,
+                  fontWeight: 800,
+                  letterSpacing: "0.04em",
+                  cursor:
+                    loading || !email || !password ? "not-allowed" : "pointer",
+                }}
+              >
+                {loading ? "Signing in…" : "Sign In"}
+              </button>
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={loading}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: T.dim,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  padding: "4px",
+                  fontWeight: 600,
+                }}
+              >
+                Forgot password?
+              </button>
+            </form>
+          </div>
+        );
+      }
+
+      // ── Gate Screen (pending access / no locations) ──
+      function GateScreen({ title, body, onLogout }) {
+        return (
+          <div
+            style={{
+              maxWidth: 480,
+              margin: "0 auto",
+              minHeight: "100vh",
+              background: T.bg,
+              padding: "80px 24px 40px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+            }}
+          >
+            <div
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: 14,
+                background: `linear-gradient(135deg,${T.accent},${T.orange})`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 26,
+                fontWeight: 900,
+                color: T.bg,
+                fontFamily: "'Outfit',sans-serif",
+                marginBottom: 24,
+              }}
+            >
+              A
+            </div>
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 800,
+                color: T.white,
+                fontFamily: "'Outfit',sans-serif",
+                marginBottom: 10,
+                textAlign: "center",
+              }}
+            >
+              {title}
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: T.dim,
+                textAlign: "center",
+                lineHeight: 1.5,
+                maxWidth: 320,
+                marginBottom: 24,
+              }}
+            >
+              {body}
+            </div>
+            <button
+              onClick={onLogout}
+              style={{
+                padding: "12px 24px",
+                borderRadius: 10,
+                border: `1px solid ${T.border}`,
+                background: T.card,
+                color: T.text,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Log out
+            </button>
+          </div>
+        );
+      }
+
+      // ── Settings Drawer ──
+      function SettingsDrawer({ profile, onClose, onLogout }) {
+        const initial = (profile.full_name ||
+          profile.email ||
+          "?")[0].toUpperCase();
+        const roleLabel = (profile.role || "").replace(/_/g, " ");
+        return (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 200,
+              display: "flex",
+              justifyContent: "flex-end",
+            }}
+          >
+            <div
+              onClick={onClose}
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "rgba(0,0,0,0.6)",
+                backdropFilter: "blur(4px)",
+                WebkitBackdropFilter: "blur(4px)",
+              }}
+            />
+            <div
+              className="fade-in"
+              style={{
+                position: "relative",
+                width: "min(320px, 85%)",
+                height: "100%",
+                background: T.surface,
+                borderLeft: `1px solid ${T.border}`,
+                padding: 22,
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: T.dim,
+                  }}
+                >
+                  Account
+                </div>
+                <button
+                  onClick={onClose}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: T.dim,
+                    fontSize: 24,
+                    cursor: "pointer",
+                    padding: 0,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: "50%",
+                  background: T.accentDim,
+                  border: `2px solid ${T.accent}44`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: T.accent,
+                  fontFamily: "'Outfit',sans-serif",
+                }}
+              >
+                {initial}
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: T.white }}>
+                  {profile.full_name || "—"}
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: T.dim,
+                    marginTop: 2,
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {profile.email}
+                </div>
+              </div>
+              <div
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: T.dim,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Role
+                </span>
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: T.accent,
+                    fontWeight: 700,
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {roleLabel}
+                </span>
+              </div>
+              <div style={{ flex: 1 }} />
+              <button
+                onClick={onLogout}
+                style={{
+                  padding: "12px",
+                  borderRadius: 10,
+                  border: `1px solid ${T.red}33`,
+                  background: T.redDim,
+                  color: T.red,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Log out
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // ── Authenticated App ──
+      function AuthenticatedApp({
+        profile,
+        accessibleLocations,
+        selectedLocationId,
+        setSelectedLocationId,
+        onLogout,
+      }) {
+        const [screen, setScreen] = useState("dashboard");
+        const [selectedLead, setSelectedLead] = useState(null);
+        const [settingsOpen, setSettingsOpen] = useState(false);
+        const [pickerOpen, setPickerOpen] = useState(false);
+        const data = getSeedData();
+        const unreadCount = data.conversations.reduce(
+          (s, c) => s + c.unread,
+          0,
+        );
+        const hideLeaderboard = profile.role === "sales_rep";
+        const firstName =
+          (profile.full_name || profile.email || "User").split(/\s+/)[0] ||
+          "User";
+        const firstInitial = firstName[0] ? firstName[0].toUpperCase() : "?";
+        const today = new Date().toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        });
+        const currentLocation =
+          accessibleLocations.find(
+            (l) => l.ghl_location_id === selectedLocationId,
+          ) || accessibleLocations[0];
+        const shortLabel = currentLocation
+          ? currentLocation.name.replace(/^Aira Fitness\s*/i, "") ||
+            currentLocation.name
+          : "—";
+        const multi = accessibleLocations.length > 1;
+
+        const renderScreen = () => {
+          if (selectedLead)
+            return (
+              <LeadDetail
+                lead={selectedLead}
+                onBack={() => setSelectedLead(null)}
+              />
+            );
+          switch (screen) {
+            case "dashboard":
+              return (
+                <DashboardScreen
+                  data={data}
+                  hideLeaderboard={hideLeaderboard}
+                />
+              );
+            case "leads":
+              return (
+                <LeadsScreen data={data} onSelect={(l) => setSelectedLead(l)} />
+              );
+            case "conversations":
+              return <ConversationsScreen data={data} />;
+            case "appointments":
+              return <AppointmentsScreen data={data} />;
+            default:
+              return (
+                <DashboardScreen
+                  data={data}
+                  hideLeaderboard={hideLeaderboard}
+                />
+              );
+          }
+        };
+
+        return (
+          <div
+            style={{
+              maxWidth: 480,
+              margin: "0 auto",
+              minHeight: "100vh",
+              background: T.bg,
+              color: T.text,
+              position: "relative",
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: "14px 20px 10px",
+                background: `linear-gradient(135deg,${T.surface},${T.bg})`,
+                borderBottom: `1px solid ${T.border}`,
+                position: "sticky",
+                top: 0,
+                zIndex: 50,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 12,
+                }}
+              >
+                <button
+                  onClick={() => multi && setPickerOpen((v) => !v)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    cursor: multi ? "pointer" : "default",
+                    textAlign: "left",
+                    minWidth: 0,
+                    flex: 1,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: 8,
+                      background: `linear-gradient(135deg,${T.accent},${T.orange})`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 14,
+                      fontWeight: 900,
+                      color: T.bg,
+                      flexShrink: 0,
+                      fontFamily: "'Outfit',sans-serif",
+                    }}
+                  >
+                    A
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: T.white,
+                        letterSpacing: "-0.01em",
+                      }}
+                    >
+                      AIRA FITNESS
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: T.dim,
+                        letterSpacing: "0.04em",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        minWidth: 0,
+                      }}
+                    >
+                      <span
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {shortLabel}
+                      </span>
+                      {multi && (
+                        <span style={{ fontSize: 8, color: T.accent }}>▾</span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setSettingsOpen(true)}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                    gap: 3,
+                    flexShrink: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "4px 10px",
+                      borderRadius: 8,
+                      background: T.accentDim,
+                      border: `1px solid ${T.accent}33`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 16,
+                        height: 16,
+                        borderRadius: "50%",
+                        background: T.accent,
+                        color: T.bg,
+                        fontSize: 9,
+                        fontWeight: 800,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {firstInitial}
+                    </div>
+                    <span
+                      style={{ fontSize: 12, fontWeight: 700, color: T.accent }}
+                    >
+                      {firstName}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, color: T.muted }}>{today}</div>
+                </button>
+              </div>
+              {pickerOpen && multi && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    background: T.card,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 10,
+                    padding: 6,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                  }}
+                >
+                  {accessibleLocations.map((loc) => (
+                    <button
+                      key={loc.id}
+                      onClick={() => {
+                        setSelectedLocationId(loc.ghl_location_id);
+                        setPickerOpen(false);
+                      }}
+                      style={{
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        borderRadius: 8,
+                        border: "none",
+                        background:
+                          loc.ghl_location_id === selectedLocationId
+                            ? T.accentDim
+                            : "transparent",
+                        color:
+                          loc.ghl_location_id === selectedLocationId
+                            ? T.accent
+                            : T.text,
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {loc.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ paddingBottom: 72 }}>{renderScreen()}</div>
+
+            {/* Bottom Nav */}
+            <div
+              style={{
+                position: "fixed",
+                bottom: 0,
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: "100%",
+                maxWidth: 480,
+                display: "flex",
+                justifyContent: "space-around",
+                padding: "8px 0 env(safe-area-inset-bottom, 12px)",
+                background: `${T.surface}f0`,
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
+                borderTop: `1px solid ${T.border}`,
+                zIndex: 100,
+              }}
+            >
+              <NavItem
+                icon="📊"
+                label="Dashboard"
+                active={screen === "dashboard" && !selectedLead}
+                onClick={() => {
+                  setScreen("dashboard");
+                  setSelectedLead(null);
+                }}
+              />
+              <NavItem
+                icon="👥"
+                label="Leads"
+                active={screen === "leads" || !!selectedLead}
+                onClick={() => {
+                  setScreen("leads");
+                  setSelectedLead(null);
+                }}
+                count={data.leads.filter((l) => l.status === "New Lead").length}
+              />
+              <NavItem
+                icon="💬"
+                label="Messages"
+                active={screen === "conversations"}
+                onClick={() => {
+                  setScreen("conversations");
+                  setSelectedLead(null);
+                }}
+                count={unreadCount}
+              />
+              <NavItem
+                icon="📅"
+                label="Appts"
+                active={screen === "appointments"}
+                onClick={() => {
+                  setScreen("appointments");
+                  setSelectedLead(null);
+                }}
+                count={
+                  data.appointments.filter((a) => a.date === "Today").length
+                }
+              />
+            </div>
+
+            {settingsOpen && (
+              <SettingsDrawer
+                profile={profile}
+                onClose={() => setSettingsOpen(false)}
+                onLogout={onLogout}
+              />
+            )}
+          </div>
+        );
+      }
+
+      // ── Root App with auth gate ──
+      function App() {
+        const [state, setState] = useState({ status: "loading" });
+
+        const loadProfile = useCallback(async (session) => {
+          try {
+            const [
+              { data: userRow, error: uerr },
+              { data: ghlIds, error: rerr },
+            ] = await Promise.all([
+              window.supabase
+                .from("users")
+                .select("*")
+                .eq("auth_user_id", session.user.id)
+                .maybeSingle(),
+              window.supabase.rpc("current_user_ghl_location_ids"),
+            ]);
+            if (uerr) console.error("users fetch error:", uerr);
+            if (!userRow || !userRow.active) {
+              setState({ status: "pending", email: session.user.email });
+              return;
+            }
+            if (rerr) console.error("ghl ids rpc error:", rerr);
+            const ids = ghlIds || [];
+            if (ids.length === 0) {
+              setState({ status: "no-locations", profile: userRow });
+              return;
+            }
+            const { data: locs, error: lerr } = await window.supabase
+              .from("locations")
+              .select("id, ghl_location_id, name")
+              .in("ghl_location_id", ids)
+              .eq("active", true)
+              .order("name");
+            if (lerr) console.error("locations fetch error:", lerr);
+            const locations = locs || [];
+            if (locations.length === 0) {
+              setState({ status: "no-locations", profile: userRow });
+              return;
+            }
+            const stored = localStorage.getItem("aira_selected_location_id");
+            const validStored =
+              stored && locations.some((l) => l.ghl_location_id === stored);
+            const selectedId = validStored
+              ? stored
+              : locations[0].ghl_location_id;
+            localStorage.setItem("aira_selected_location_id", selectedId);
+            setState({
+              status: "ready",
+              profile: userRow,
+              locations,
+              selectedLocationId: selectedId,
+            });
+          } catch (e) {
+            console.error("loadProfile failed:", e);
+            setState({ status: "login" });
+          }
+        }, []);
+
+        useEffect(() => {
+          let mounted = true;
+          let unsub = () => {};
+          const start = async () => {
+            let tries = 0;
+            while (!window.supabase && tries < 150) {
+              await new Promise((r) => setTimeout(r, 30));
+              tries++;
+            }
+            if (!mounted) return;
+            if (!window.supabase) {
+              setState({ status: "login" });
+              return;
+            }
+            const {
+              data: { session },
+            } = await window.supabase.auth.getSession();
+            if (!mounted) return;
+            if (!session) setState({ status: "login" });
+            else await loadProfile(session);
+            const sub = window.supabase.auth.onAuthStateChange(
+              (event, sess) => {
+                if (!mounted) return;
+                if (event === "SIGNED_OUT") {
+                  localStorage.removeItem("aira_selected_location_id");
+                  setState({ status: "login" });
+                  return;
+                }
+                if (event === "SIGNED_IN" && sess) {
+                  setState({ status: "loading" });
+                  loadProfile(sess);
+                }
+              },
+            );
+            unsub = () => sub.data.subscription.unsubscribe();
+          };
+          start();
+          return () => {
+            mounted = false;
+            unsub();
+          };
+        }, [loadProfile]);
+
+        const handleLogout = async () => {
+          localStorage.removeItem("aira_selected_location_id");
+          try {
+            await window.supabase.auth.signOut();
+          } catch (e) {
+            console.error(e);
+          }
+          setState({ status: "login" });
+        };
+
+        const setSelectedLocationId = (id) => {
+          localStorage.setItem("aira_selected_location_id", id);
+          setState((s) => ({ ...s, selectedLocationId: id }));
+        };
+
+        switch (state.status) {
+          case "loading":
+            return <Splash />;
+          case "login":
+            return <LoginScreen />;
+          case "pending":
+            return (
+              <GateScreen
+                title="Access Pending"
+                body={`Your account (${state.email}) isn't set up yet. Contact your administrator to get access.`}
+                onLogout={handleLogout}
+              />
+            );
+          case "no-locations":
+            return (
+              <GateScreen
+                title="No Locations Assigned"
+                body="Your account isn't linked to any active locations yet. Contact your administrator."
+                onLogout={handleLogout}
+              />
+            );
+          case "ready":
+            return (
+              <AuthenticatedApp
+                profile={state.profile}
+                accessibleLocations={state.locations}
+                selectedLocationId={state.selectedLocationId}
+                setSelectedLocationId={setSelectedLocationId}
+                onLogout={handleLogout}
+              />
+            );
+          default:
+            return <Splash />;
+        }
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
 </html>
