@@ -185,7 +185,16 @@ async function syncAppointments(
   supabase: SupabaseClient,
   apiKey: string,
   locationId: string,
+  calendarId: string | null,
+  warnings: string[],
 ): Promise<number> {
+  if (!calendarId) {
+    warnings.push(
+      `appointments: skipped for ${locationId} (no ghl_calendar_id configured)`,
+    );
+    return 0;
+  }
+
   const now = Date.now();
   const startTime = new Date(
     now - APPT_WINDOW_PAST_DAYS * 24 * 60 * 60 * 1000,
@@ -196,12 +205,19 @@ async function syncAppointments(
 
   const data = await ghlFetch(
     `/calendars/events?locationId=${encodeURIComponent(locationId)}` +
+      `&calendarId=${encodeURIComponent(calendarId)}` +
       `&startTime=${encodeURIComponent(startTime)}` +
       `&endTime=${encodeURIComponent(endTime)}`,
     apiKey,
   );
-  const events: any[] = data.events || [];
-  if (events.length === 0) return 0;
+  const events: any[] = data.events || data.appointments || [];
+  if (events.length === 0) {
+    const keys = Object.keys(data || {}).join(",") || "(none)";
+    warnings.push(
+      `appointments: 0 events returned for ${locationId} (calendarId=${calendarId}, response keys: ${keys})`,
+    );
+    return 0;
+  }
 
   const rows = events.map((e) => ({
     ghl_event_id: e.id,
@@ -227,6 +243,7 @@ async function syncOneLocation(
   supabase: SupabaseClient,
   apiKey: string,
   ghlLocationId: string,
+  ghlCalendarId: string | null,
 ) {
   const warnings: string[] = [];
 
@@ -257,6 +274,8 @@ async function syncOneLocation(
       supabase,
       apiKey,
       ghlLocationId,
+      ghlCalendarId,
+      warnings,
     );
 
     const counts = { contacts, opportunities, appointments };
@@ -329,42 +348,59 @@ Deno.serve(async (req) => {
       ? body.ghl_location_id.trim()
       : "";
 
-  let locationIds: string[];
-  if (requested) {
-    locationIds = [requested];
-  } else {
-    const { data: locs, error } = await supabase
-      .from("locations")
-      .select("ghl_location_id")
-      .eq("active", true);
-    if (error) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: `locations query failed: ${error.message}`,
-        }),
-        { status: 500, headers: JSON_HEADERS },
-      );
-    }
-    locationIds = (locs || [])
-      .map((r: { ghl_location_id: string | null }) => r.ghl_location_id)
-      .filter((x): x is string => typeof x === "string" && x.length > 0);
+  let locQuery = supabase
+    .from("locations")
+    .select("ghl_location_id, ghl_calendar_id")
+    .eq("active", true);
+  if (requested) locQuery = locQuery.eq("ghl_location_id", requested);
+
+  const { data: locs, error: locErr } = await locQuery;
+  if (locErr) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: `locations query failed: ${locErr.message}`,
+      }),
+      { status: 500, headers: JSON_HEADERS },
+    );
   }
 
-  if (locationIds.length === 0) {
+  const targets = (locs || [])
+    .map(
+      (r: {
+        ghl_location_id: string | null;
+        ghl_calendar_id: string | null;
+      }) => ({
+        ghl_location_id: r.ghl_location_id,
+        ghl_calendar_id: r.ghl_calendar_id,
+      }),
+    )
+    .filter(
+      (r): r is { ghl_location_id: string; ghl_calendar_id: string | null } =>
+        typeof r.ghl_location_id === "string" && r.ghl_location_id.length > 0,
+    );
+
+  if (targets.length === 0) {
     return new Response(
       JSON.stringify({
         ok: true,
         results: [],
-        note: "no active locations to sync",
+        note: requested
+          ? `no active location with ghl_location_id=${requested}`
+          : "no active locations to sync",
       }),
       { status: 200, headers: JSON_HEADERS },
     );
   }
 
   const results = [];
-  for (const id of locationIds) {
-    const r = await syncOneLocation(supabase, GHL_API_KEY, id);
+  for (const t of targets) {
+    const r = await syncOneLocation(
+      supabase,
+      GHL_API_KEY,
+      t.ghl_location_id,
+      t.ghl_calendar_id,
+    );
     results.push(r);
     await sleep(REQUEST_DELAY_MS);
   }
