@@ -119,6 +119,18 @@
         background-size: 200% 100%;
         animation: shimmer 1.4s ease-in-out infinite;
       }
+      @keyframes pulseGlow {
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 rgba(0, 228, 184, 0.55);
+        }
+        50% {
+          box-shadow: 0 0 0 10px rgba(0, 228, 184, 0);
+        }
+      }
+      .pulse-btn {
+        animation: pulseGlow 1.8s ease-in-out infinite;
+      }
     </style>
   </head>
   <body>
@@ -1666,7 +1678,7 @@
       }
 
       // ── Lead Detail ──
-      function LeadDetail({ lead, onBack, selectedLocationId }) {
+      function LeadDetail({ lead, onBack, selectedLocationId, onBook }) {
         const markCall = () =>
           markPendingCall({
             contactId: lead.id,
@@ -1810,7 +1822,14 @@
                   </div>
                 )}
               </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  marginTop: 24,
+                  flexWrap: "wrap",
+                }}
+              >
                 <ActionBtn
                   icon="📞"
                   label="Call Now"
@@ -1824,6 +1843,14 @@
                   href={`sms:${lead.phone}`}
                   color={T.blue}
                 />
+                {onBook && (
+                  <ActionBtn
+                    icon="📅"
+                    label="Book Appt"
+                    onClick={onBook}
+                    color={T.orange}
+                  />
+                )}
               </div>
             </div>
             <div
@@ -2172,177 +2199,491 @@
         );
       }
 
-      // ── Appointments Screen ──
-      function AppointmentsScreen({ data, selectedLocationId }) {
+      // ── Appointments Screen (real data) ──
+      function dateGroupKey(date) {
+        const now = new Date();
+        const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const t1 = new Date(t0.getTime() + 86400000);
+        const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        if (d.getTime() === t0.getTime()) return "Today";
+        if (d.getTime() === t1.getTime()) return "Tomorrow";
+        return date.toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      function formatApptTime(date) {
+        return date
+          .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+          })
+          .toLowerCase()
+          .replace(" ", "");
+      }
+
+      function AppointmentsScreen({
+        selectedLocationId,
+        onBook,
+        callLogVersion,
+      }) {
+        const [rows, setRows] = useState([]);
+        const [contactMap, setContactMap] = useState({});
+        const [loading, setLoading] = useState(true);
+        const [syncing, setSyncing] = useState(false);
+        const [error, setError] = useState(null);
+        const [showCancelled, setShowCancelled] = useState(false);
+
+        const fetchAppts = useCallback(async () => {
+          if (!selectedLocationId) return;
+          const sinceIso = new Date(
+            Date.now() - 24 * 60 * 60 * 1000,
+          ).toISOString();
+          const { data, error: err } = await window.supabase
+            .from("appointments")
+            .select(
+              "ghl_event_id, ghl_contact_id, title, start_time, end_time, appointment_status, assigned_to, portal_assigned_to",
+            )
+            .eq("ghl_location_id", selectedLocationId)
+            .gte("start_time", sinceIso)
+            .order("start_time", { ascending: true })
+            .limit(200);
+          if (err) throw err;
+          const list = data || [];
+          const ids = [
+            ...new Set(list.map((r) => r.ghl_contact_id).filter(Boolean)),
+          ];
+          const cMap = {};
+          if (ids.length > 0) {
+            const { data: cData, error: cErr } = await window.supabase
+              .from("contacts")
+              .select("ghl_contact_id, full_name, first_name, last_name, phone")
+              .in("ghl_contact_id", ids);
+            if (cErr) console.warn("contacts fetch failed:", cErr.message);
+            (cData || []).forEach((c) => {
+              cMap[c.ghl_contact_id] = c;
+            });
+          }
+          setContactMap(cMap);
+          setRows(list);
+        }, [selectedLocationId]);
+
+        const load = useCallback(async () => {
+          setLoading(true);
+          setError(null);
+          try {
+            await fetchAppts();
+          } catch (e) {
+            console.error("appointments fetch failed:", e);
+            setError(
+              e && e.message ? e.message : "Failed to load appointments",
+            );
+          } finally {
+            setLoading(false);
+          }
+        }, [fetchAppts]);
+
+        const triggerSync = useCallback(async () => {
+          if (!selectedLocationId) return;
+          setSyncing(true);
+          try {
+            const { data: session } = await window.supabase.auth.getSession();
+            const jwt = session?.session?.access_token;
+            if (!jwt) return;
+            await fetch(
+              "https://rgpfzactcqbvadthzsgx.supabase.co/functions/v1/sync-ghl-to-cache",
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${jwt}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ ghl_location_id: selectedLocationId }),
+              },
+            );
+            await fetchAppts();
+          } catch (e) {
+            console.error("sync trigger failed:", e);
+          } finally {
+            setSyncing(false);
+          }
+        }, [selectedLocationId, fetchAppts]);
+
+        // Initial load: show cached immediately, background-sync + refetch
+        useEffect(() => {
+          load();
+          triggerSync();
+          // eslint-disable-next-line
+        }, [selectedLocationId, callLogVersion]);
+
+        const visible = rows.filter((r) => {
+          if (r.appointment_status === "invalid") return false;
+          if (!showCancelled && r.appointment_status === "cancelled")
+            return false;
+          return true;
+        });
+
+        const grouped = [];
+        const byKey = {};
+        visible.forEach((a) => {
+          const d = new Date(a.start_time);
+          const key = dateGroupKey(d);
+          if (!byKey[key]) {
+            byKey[key] = { key, items: [] };
+            grouped.push(byKey[key]);
+          }
+          byKey[key].items.push(a);
+        });
+
         const statusStyles = {
           confirmed: { bg: T.accentDim, color: T.accent, label: "Confirmed" },
-          upcoming: { bg: T.blueDim, color: T.blue, label: "Upcoming" },
+          showed: {
+            bg: "rgba(16,185,129,0.15)",
+            color: TRIAGE_GREEN,
+            label: "Showed",
+          },
+          noshow: { bg: T.redDim, color: T.red, label: "No Show" },
           cancelled: { bg: T.redDim, color: T.red, label: "Cancelled" },
+          invalid: {
+            bg: "rgba(107,109,123,0.15)",
+            color: T.muted,
+            label: "Invalid",
+          },
+          new: { bg: T.blueDim, color: T.blue, label: "New" },
         };
-        const grouped = {};
-        data.appointments.forEach((a) => {
-          if (!grouped[a.date]) grouped[a.date] = [];
-          grouped[a.date].push(a);
-        });
+
+        const cancelledCount = rows.filter(
+          (r) => r.appointment_status === "cancelled",
+        ).length;
 
         return (
           <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
             <div
               style={{
-                fontSize: 22,
-                fontWeight: 800,
-                color: T.white,
-                fontFamily: "'Outfit',sans-serif",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
                 marginBottom: 4,
+                gap: 8,
+                flexWrap: "wrap",
               }}
             >
-              Appointments
-            </div>
-            <div style={{ fontSize: 12, color: T.dim, marginBottom: 20 }}>
-              {data.appointments.length} scheduled
-            </div>
-            {Object.entries(grouped).map(([date, apts]) => (
-              <div key={date} style={{ marginBottom: 20 }}>
-                <div
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: T.white,
+                  fontFamily: "'Outfit',sans-serif",
+                }}
+              >
+                Appointments
+              </div>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button
+                  onClick={triggerSync}
+                  disabled={syncing}
+                  title="Refresh from GHL"
                   style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                    color: date === "Today" ? T.accent : T.dim,
-                    marginBottom: 10,
-                    display: "flex",
+                    display: "inline-flex",
                     alignItems: "center",
-                    gap: 8,
+                    gap: 4,
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                    border: `1px solid ${T.border}`,
+                    background: "transparent",
+                    color: T.text,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: syncing ? "wait" : "pointer",
+                    fontFamily: "inherit",
+                    opacity: syncing ? 0.6 : 1,
                   }}
                 >
-                  {date === "Today" && (
-                    <span
+                  <span
+                    style={{
+                      display: "inline-block",
+                      animation: syncing ? "spin 0.8s linear infinite" : "none",
+                    }}
+                  >
+                    ↻
+                  </span>
+                  {syncing ? "Syncing" : "Refresh"}
+                </button>
+                {onBook && (
+                  <button
+                    onClick={onBook}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "8px 14px",
+                      borderRadius: 10,
+                      border: `1px solid ${T.accent}44`,
+                      background: T.accentDim,
+                      color: T.accent,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    + New Appointment
+                  </button>
+                )}
+              </div>
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: T.dim,
+                marginBottom: 18,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <span>{visible.length} scheduled</span>
+              {cancelledCount > 0 && (
+                <button
+                  onClick={() => setShowCancelled((v) => !v)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: T.dim,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    padding: 0,
+                    textDecoration: "underline",
+                  }}
+                >
+                  {showCancelled ? "hide" : "show"} {cancelledCount} cancelled
+                </button>
+              )}
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  background: T.redDim,
+                  border: `1px solid ${T.red}33`,
+                  color: T.red,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  marginBottom: 14,
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            {loading && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                {[0, 1, 2].map((i) => (
+                  <div
+                    key={`skel-${i}`}
+                    style={{
+                      padding: "14px 18px",
+                      background: T.card,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                    }}
+                  >
+                    <SkelBar w={56} h={20} />
+                    <div
                       style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background: T.accent,
-                        animation: "pulse 2s infinite",
+                        width: 1,
+                        height: 36,
+                        background: T.border,
                       }}
                     />
-                  )}
-                  {date}
-                </div>
-                {apts.map((a) => {
-                  const st = statusStyles[a.status] || statusStyles.upcoming;
-                  return (
                     <div
-                      key={a.id}
                       style={{
+                        flex: 1,
                         display: "flex",
-                        alignItems: "center",
-                        gap: 14,
-                        padding: "14px 18px",
-                        background: T.card,
-                        border: `1px solid ${T.border}`,
-                        borderRadius: 14,
-                        marginBottom: 8,
+                        flexDirection: "column",
+                        gap: 6,
                       }}
                     >
-                      <div style={{ minWidth: 56, textAlign: "center" }}>
-                        <div
-                          style={{
-                            fontSize: 16,
-                            fontWeight: 800,
-                            color: T.white,
-                            fontFamily: "'Outfit',sans-serif",
-                          }}
-                        >
-                          {a.time}
-                        </div>
-                      </div>
-                      <div
-                        style={{ width: 1, height: 36, background: T.border }}
+                      <SkelBar w={140} h={14} />
+                      <SkelBar w={80} h={10} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!loading && grouped.length === 0 && !error && (
+              <div
+                style={{
+                  padding: 24,
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 14,
+                  textAlign: "center",
+                  color: T.muted,
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}
+              >
+                No upcoming appointments.
+                <br />
+                Tap <strong>+ New Appointment</strong> to book one.
+              </div>
+            )}
+
+            {!loading &&
+              grouped.map((group) => (
+                <div key={group.key} style={{ marginBottom: 20 }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: group.key === "Today" ? T.accent : T.dim,
+                      marginBottom: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    {group.key === "Today" && (
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: T.accent,
+                          animation: "pulse 2s infinite",
+                        }}
                       />
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: 14,
-                            fontWeight: 700,
-                            color: T.white,
-                          }}
-                        >
-                          {a.name}
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            marginTop: 4,
-                          }}
-                        >
-                          <span style={{ fontSize: 11, color: T.dim }}>
-                            {a.type}
-                          </span>
-                          <span
+                    )}
+                    {group.key}
+                  </div>
+                  {group.items.map((a) => {
+                    const st =
+                      statusStyles[a.appointment_status] || statusStyles.new;
+                    const when = new Date(a.start_time);
+                    const contact = contactMap[a.ghl_contact_id];
+                    const displayName =
+                      a.title ||
+                      contact?.full_name ||
+                      [contact?.first_name, contact?.last_name]
+                        .filter(Boolean)
+                        .join(" ") ||
+                      "(no title)";
+                    const phone = contact?.phone || null;
+                    return (
+                      <div
+                        key={a.ghl_event_id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 14,
+                          padding: "14px 18px",
+                          background: T.card,
+                          border: `1px solid ${T.border}`,
+                          borderRadius: 14,
+                          marginBottom: 8,
+                        }}
+                      >
+                        <div style={{ minWidth: 62, textAlign: "center" }}>
+                          <div
                             style={{
-                              padding: "2px 8px",
-                              borderRadius: 5,
-                              fontSize: 10,
-                              fontWeight: 700,
-                              background: st.bg,
-                              color: st.color,
+                              fontSize: 15,
+                              fontWeight: 800,
+                              color: T.white,
+                              fontFamily: "'Outfit',sans-serif",
                             }}
                           >
-                            {st.label}
-                          </span>
+                            {formatApptTime(when)}
+                          </div>
                         </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <a
-                          href={`tel:${a.phone}`}
-                          onClick={() =>
-                            markPendingCall({
-                              contactId: a.id,
-                              contactName: a.name,
-                              ghl_location_id: selectedLocationId,
-                            })
-                          }
+                        <div
                           style={{
-                            width: 38,
-                            height: 38,
-                            borderRadius: 10,
-                            background: T.accentDim,
-                            border: `1px solid ${T.accent}33`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: 16,
-                            color: T.accent,
+                            width: 1,
+                            height: 36,
+                            background: T.border,
                           }}
-                        >
-                          📞
-                        </a>
-                        <a
-                          href={`sms:${a.phone}`}
-                          style={{
-                            width: 38,
-                            height: 38,
-                            borderRadius: 10,
-                            background: T.blueDim,
-                            border: `1px solid ${T.blue}33`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: 16,
-                            color: T.blue,
-                          }}
-                        >
-                          💬
-                        </a>
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 700,
+                              color: T.white,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {displayName}
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              marginTop: 4,
+                            }}
+                          >
+                            <span
+                              style={{
+                                padding: "2px 8px",
+                                borderRadius: 5,
+                                fontSize: 10,
+                                fontWeight: 700,
+                                background: st.bg,
+                                color: st.color,
+                              }}
+                            >
+                              {st.label}
+                            </span>
+                          </div>
+                        </div>
+                        {phone && (
+                          <a
+                            href={`tel:${phone}`}
+                            onClick={() =>
+                              markPendingCall({
+                                contactId: a.ghl_contact_id,
+                                contactName: displayName,
+                                ghl_location_id: selectedLocationId,
+                              })
+                            }
+                            style={{
+                              width: 38,
+                              height: 38,
+                              borderRadius: 10,
+                              background: T.accentDim,
+                              border: `1px solid ${T.accent}33`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 16,
+                              color: T.accent,
+                              flexShrink: 0,
+                            }}
+                          >
+                            📞
+                          </a>
+                        )}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+                    );
+                  })}
+                </div>
+              ))}
           </div>
         );
       }
@@ -4006,6 +4347,1316 @@
         );
       }
 
+      // ── Book Appointment Modal ──
+      function getTzOffsetString(dateStr, timeStr, tz) {
+        const safeTz = tz || "America/Chicago";
+        try {
+          const sample = new Date(`${dateStr}T${timeStr}:00`);
+          const dtf = new Intl.DateTimeFormat("en-US", {
+            timeZone: safeTz,
+            hour12: false,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          });
+          const parts = dtf.formatToParts(sample);
+          const get = (t) => parts.find((p) => p.type === t)?.value;
+          const naiveMs = Date.UTC(
+            parseInt(get("year"), 10),
+            parseInt(get("month"), 10) - 1,
+            parseInt(get("day"), 10),
+            parseInt(get("hour"), 10),
+            parseInt(get("minute"), 10),
+            parseInt(get("second"), 10),
+          );
+          const diffMin = Math.round((naiveMs - sample.getTime()) / 60000);
+          const sign = diffMin >= 0 ? "+" : "-";
+          const a = Math.abs(diffMin);
+          return `${sign}${String(Math.floor(a / 60)).padStart(2, "0")}:${String(a % 60).padStart(2, "0")}`;
+        } catch {
+          return "-05:00";
+        }
+      }
+
+      function defaultBookingSlot() {
+        const d = new Date(Date.now() + 30 * 60 * 1000);
+        const m = d.getMinutes();
+        if (m !== 0) {
+          if (m <= 30) d.setMinutes(30, 0, 0);
+          else {
+            d.setMinutes(0, 0, 0);
+            d.setHours(d.getHours() + 1);
+          }
+        }
+        const pad = (n) => String(n).padStart(2, "0");
+        return {
+          date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+          time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+        };
+      }
+
+      function BookAppointmentModal({
+        profile,
+        selectedLocationId,
+        accessibleLocations,
+        initialContact,
+        initialContactQuery,
+        onClose,
+        onBooked,
+      }) {
+        const [contact, setContact] = useState(initialContact || null);
+        const [query, setQuery] = useState(
+          initialContactQuery || initialContact?.full_name || "",
+        );
+        const [results, setResults] = useState([]);
+        const [searching, setSearching] = useState(false);
+        const [dateTime, setDateTime] = useState(() => defaultBookingSlot());
+        const [duration, setDuration] = useState(30);
+        const [team, setTeam] = useState([]);
+        const [assignedUserId, setAssignedUserId] = useState(null);
+        const [submitting, setSubmitting] = useState(false);
+        const [error, setError] = useState(null);
+
+        const location = accessibleLocations.find(
+          (l) => l.ghl_location_id === selectedLocationId,
+        );
+        const locTz = location?.timezone || "America/Chicago";
+        const isSalesRep = profile.role === "sales_rep";
+
+        // Load team for assigned-to dropdown
+        useEffect(() => {
+          let mounted = true;
+          (async () => {
+            try {
+              const { data } = await window.supabase.rpc("location_team_kpis", {
+                p_ghl_location_id: selectedLocationId,
+              });
+              if (!mounted) return;
+              setTeam(data || []);
+              // Default assignment
+              const myGhl = profile.ghl_user_id;
+              if (myGhl) {
+                setAssignedUserId(myGhl);
+              } else {
+                // fallback: first manager at this location with a ghl_user_id
+                const mgr = (data || []).find(
+                  (t) => t.role === "manager" && t.ghl_user_id,
+                );
+                if (mgr) setAssignedUserId(mgr.ghl_user_id);
+                else {
+                  const anyRep = (data || []).find((t) => t.ghl_user_id);
+                  if (anyRep) setAssignedUserId(anyRep.ghl_user_id);
+                }
+              }
+            } catch (e) {
+              console.error("team fetch failed:", e);
+            }
+          })();
+          return () => {
+            mounted = false;
+          };
+        }, [selectedLocationId, profile.ghl_user_id]);
+
+        // Debounced contact search (skip if already have contact selected)
+        useEffect(() => {
+          if (contact || !query || query.trim().length < 2) {
+            setResults([]);
+            return;
+          }
+          let cancelled = false;
+          const t = setTimeout(async () => {
+            setSearching(true);
+            try {
+              const q = query.trim();
+              const { data, error: err } = await window.supabase
+                .from("contacts")
+                .select(
+                  "ghl_contact_id, full_name, first_name, last_name, phone",
+                )
+                .eq("ghl_location_id", selectedLocationId)
+                .ilike("full_name", `%${q}%`)
+                .order("last_activity", { ascending: false, nullsFirst: false })
+                .limit(15);
+              if (cancelled) return;
+              if (err) throw err;
+              setResults(data || []);
+            } catch (e) {
+              console.error("contact search failed:", e);
+              if (!cancelled) setResults([]);
+            } finally {
+              if (!cancelled) setSearching(false);
+            }
+          }, 300);
+          return () => {
+            cancelled = true;
+            clearTimeout(t);
+          };
+        }, [query, selectedLocationId, contact]);
+
+        const canSubmit =
+          !!contact &&
+          !!dateTime.date &&
+          !!dateTime.time &&
+          !!assignedUserId &&
+          !submitting;
+
+        const submit = async () => {
+          setSubmitting(true);
+          setError(null);
+          try {
+            const offset = getTzOffsetString(
+              dateTime.date,
+              dateTime.time,
+              locTz,
+            );
+            const startIso = `${dateTime.date}T${dateTime.time}:00${offset}`;
+            const startMs = new Date(startIso).getTime();
+            const endMs = startMs + duration * 60000;
+            const endIso = new Date(endMs).toISOString();
+
+            const { data: session } = await window.supabase.auth.getSession();
+            const jwt = session?.session?.access_token;
+            if (!jwt) throw new Error("Not signed in");
+
+            const res = await fetch(
+              "https://rgpfzactcqbvadthzsgx.supabase.co/functions/v1/ghl-book-appointment",
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${jwt}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  ghl_location_id: selectedLocationId,
+                  ghl_contact_id: contact.ghl_contact_id,
+                  start_time: startIso,
+                  end_time: endIso,
+                  assigned_user_id: assignedUserId,
+                }),
+              },
+            );
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok || !body.ok) {
+              throw new Error(body?.error || `HTTP ${res.status}`);
+            }
+            if (onBooked) {
+              onBooked({
+                event: body.event,
+                contactName: contact.full_name,
+                date: dateTime.date,
+                time: dateTime.time,
+              });
+            }
+            onClose();
+          } catch (e) {
+            setError(e && e.message ? e.message : "Failed to book");
+            setSubmitting(false);
+          }
+        };
+
+        const fieldLabel = {
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: T.dim,
+        };
+        const fieldInput = {
+          padding: "12px 14px",
+          borderRadius: 10,
+          border: `1px solid ${T.border}`,
+          background: T.card,
+          color: T.text,
+          fontSize: 14,
+          outline: "none",
+          fontFamily: "inherit",
+          width: "100%",
+          boxSizing: "border-box",
+        };
+
+        const locationName = location?.name || "";
+        const todayStr = (() => {
+          const d = new Date();
+          const pad = (n) => String(n).padStart(2, "0");
+          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        })();
+
+        return (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 310,
+              background: "rgba(0,0,0,0.75)",
+              backdropFilter: "blur(6px)",
+              WebkitBackdropFilter: "blur(6px)",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+              padding: "20px 16px",
+            }}
+          >
+            <div
+              className="fade-in"
+              style={{
+                width: "100%",
+                maxWidth: 448,
+                background: T.surface,
+                border: `1px solid ${T.border}`,
+                borderRadius: 18,
+                padding: 20,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                maxHeight: "92vh",
+                overflowY: "auto",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 800,
+                    color: T.white,
+                    fontFamily: "'Outfit',sans-serif",
+                  }}
+                >
+                  Book Appointment
+                </div>
+                <button
+                  onClick={onClose}
+                  disabled={submitting}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: T.dim,
+                    fontSize: 22,
+                    cursor: submitting ? "not-allowed" : "pointer",
+                    padding: 0,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: T.dim, marginTop: -6 }}>
+                {locationName}
+              </div>
+
+              <div>
+                <label style={fieldLabel}>Contact</label>
+                {contact ? (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      padding: "10px 14px",
+                      borderRadius: 10,
+                      border: `1px solid ${T.accent}33`,
+                      background: T.accentDim,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 700,
+                          color: T.white,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {contact.full_name || "—"}
+                      </div>
+                      {contact.phone && (
+                        <div style={{ fontSize: 11, color: T.dim }}>
+                          {contact.phone}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setContact(null);
+                        setQuery("");
+                        setResults([]);
+                      }}
+                      disabled={submitting}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: T.dim,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        padding: "4px 8px",
+                      }}
+                    >
+                      change
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Search by name…"
+                      autoFocus
+                      style={{ ...fieldInput, marginTop: 6 }}
+                    />
+                    {searching && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: T.dim,
+                          marginTop: 6,
+                        }}
+                      >
+                        Searching…
+                      </div>
+                    )}
+                    {!searching &&
+                      query.trim().length >= 2 &&
+                      results.length === 0 && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: T.muted,
+                            marginTop: 6,
+                          }}
+                        >
+                          No contacts match "{query}".
+                        </div>
+                      )}
+                    {results.length > 0 && (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          maxHeight: 200,
+                          overflowY: "auto",
+                          border: `1px solid ${T.border}`,
+                          borderRadius: 10,
+                        }}
+                      >
+                        {results.map((r) => (
+                          <button
+                            key={r.ghl_contact_id}
+                            onClick={() => {
+                              setContact(r);
+                              setResults([]);
+                            }}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              padding: "10px 12px",
+                              background: "transparent",
+                              border: "none",
+                              borderBottom: `1px solid ${T.border}`,
+                              color: T.text,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 700,
+                                color: T.white,
+                              }}
+                            >
+                              {r.full_name || "—"}
+                            </div>
+                            {r.phone && (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: T.dim,
+                                }}
+                              >
+                                {r.phone}
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={fieldLabel}>Date</label>
+                  <input
+                    type="date"
+                    value={dateTime.date}
+                    min={todayStr}
+                    onChange={(e) =>
+                      setDateTime({ ...dateTime, date: e.target.value })
+                    }
+                    style={{ ...fieldInput, marginTop: 6 }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={fieldLabel}>Time</label>
+                  <input
+                    type="time"
+                    value={dateTime.time}
+                    onChange={(e) =>
+                      setDateTime({ ...dateTime, time: e.target.value })
+                    }
+                    style={{ ...fieldInput, marginTop: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={fieldLabel}>Duration</label>
+                <select
+                  value={duration}
+                  onChange={(e) => setDuration(parseInt(e.target.value, 10))}
+                  style={{ ...fieldInput, marginTop: 6 }}
+                >
+                  <option value={15}>15 minutes</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={45}>45 minutes</option>
+                  <option value={60}>60 minutes</option>
+                </select>
+              </div>
+
+              {!isSalesRep && (
+                <div>
+                  <label style={fieldLabel}>Assign to</label>
+                  <select
+                    value={assignedUserId || ""}
+                    onChange={(e) => setAssignedUserId(e.target.value)}
+                    style={{ ...fieldInput, marginTop: 6 }}
+                  >
+                    <option value="" disabled>
+                      Select rep…
+                    </option>
+                    {team
+                      .filter((t) => t.ghl_user_id)
+                      .map((t) => (
+                        <option key={t.user_id} value={t.ghl_user_id}>
+                          {t.full_name}
+                          {t.user_id === profile.id ? " (you)" : ""}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              {error && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: T.redDim,
+                    border: `1px solid ${T.red}33`,
+                    color: T.red,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  Couldn't book — {error}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <button
+                  onClick={onClose}
+                  disabled={submitting}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    borderRadius: 10,
+                    border: `1px solid ${T.border}`,
+                    background: "transparent",
+                    color: T.text,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: submitting ? "not-allowed" : "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submit}
+                  disabled={!canSubmit}
+                  style={{
+                    flex: 2,
+                    padding: "12px",
+                    borderRadius: 10,
+                    border: "none",
+                    background: canSubmit
+                      ? `linear-gradient(135deg,${T.accent},${T.blue})`
+                      : T.muted,
+                    color: T.bg,
+                    fontSize: 14,
+                    fontWeight: 800,
+                    letterSpacing: "0.04em",
+                    cursor: canSubmit ? "pointer" : "not-allowed",
+                    fontFamily: "'Outfit',sans-serif",
+                  }}
+                >
+                  {submitting ? "Booking…" : "Book Appointment"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ── Rep Personal Dashboard + Team Section ──
+      const AIRA_STANDARDS = {
+        minShows: 15,
+        minSales: 15,
+        minShowRate: 60,
+        minCloseRate: 70,
+      };
+
+      function firstNameOf(fullName) {
+        return (fullName || "").split(/\s+/)[0] || fullName || "";
+      }
+
+      function RepPersonalDashboard({
+        userId,
+        userName,
+        isSelf,
+        selectedLocationId,
+        callLogVersion,
+        onClose,
+        onGoToLeads,
+      }) {
+        const [kpis, setKpis] = useState(null);
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState(null);
+
+        const load = useCallback(async () => {
+          if (!userId || !selectedLocationId) return;
+          setLoading(true);
+          setError(null);
+          try {
+            const { data, error: err } = await window.supabase.rpc(
+              "rep_personal_kpis",
+              {
+                p_user_id: userId,
+                p_ghl_location_id: selectedLocationId,
+              },
+            );
+            if (err) throw err;
+            setKpis(
+              (data && data[0]) || {
+                calls_today: 0,
+                calls_today_connected: 0,
+                calls_this_month: 0,
+                calls_this_month_connected: 0,
+                appointments: 0,
+                showed: 0,
+                no_showed: 0,
+                cancelled: 0,
+                sales: 0,
+                revenue: 0,
+                show_rate: 0,
+                close_rate: 0,
+              },
+            );
+          } catch (e) {
+            console.error("rep_personal_kpis failed:", e);
+            setError(e && e.message ? e.message : "Failed to load rep data");
+          } finally {
+            setLoading(false);
+          }
+          // eslint-disable-next-line
+        }, [userId, selectedLocationId, callLogVersion]);
+
+        useEffect(() => {
+          load();
+        }, [load]);
+
+        const k = kpis || {};
+        const callsToday = Number(k.calls_today) || 0;
+        const callsTodayConnected = Number(k.calls_today_connected) || 0;
+        const callsMonth = Number(k.calls_this_month) || 0;
+        const appts = Number(k.appointments) || 0;
+        const showed = Number(k.showed) || 0;
+        const noShowed = Number(k.no_showed) || 0;
+        const sales = Number(k.sales) || 0;
+        const revenue = Number(k.revenue) || 0;
+        const showRate = Number(k.show_rate) || 0;
+        const closeRate = Number(k.close_rate) || 0;
+        const monthLabel = new Date()
+          .toLocaleDateString("en-US", { month: "long", year: "numeric" })
+          .toUpperCase();
+        const showRateColor =
+          showRate >= AIRA_STANDARDS.minShowRate
+            ? T.accent
+            : showRate < 40
+              ? T.red
+              : T.yellow;
+        const closeRateColor =
+          closeRate >= AIRA_STANDARDS.minCloseRate
+            ? T.accent
+            : closeRate < 40
+              ? T.red
+              : T.yellow;
+        const headingName = isSelf
+          ? `${firstNameOf(userName)}'s Performance`
+          : `${userName || "—"} · Rep Drill`;
+        const isEmpty =
+          !loading &&
+          !error &&
+          callsToday === 0 &&
+          callsMonth === 0 &&
+          appts === 0 &&
+          showed === 0 &&
+          sales === 0;
+
+        return (
+          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+            {!isSelf && onClose && (
+              <button
+                onClick={onClose}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: T.dim,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  padding: "4px 0",
+                  marginBottom: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                ← Back to team
+              </button>
+            )}
+            <div style={{ marginBottom: 18 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.dim,
+                }}
+              >
+                {monthLabel}
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: T.white,
+                  fontFamily: "'Outfit',sans-serif",
+                  marginTop: 2,
+                }}
+              >
+                {headingName}
+              </div>
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: T.redDim,
+                  border: `1px solid ${T.red}33`,
+                  marginBottom: 16,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <div style={{ color: T.red, fontSize: 12, fontWeight: 600 }}>
+                  Couldn't load rep data.
+                </div>
+                <button
+                  onClick={load}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${T.red}44`,
+                    background: "transparent",
+                    color: T.red,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {isEmpty && isSelf ? (
+              <div
+                style={{
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 16,
+                  padding: 24,
+                  marginBottom: 18,
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 800,
+                    color: T.white,
+                    fontFamily: "'Outfit',sans-serif",
+                    letterSpacing: "-0.01em",
+                    marginBottom: 12,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  You're just getting started, {firstNameOf(userName)}.
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: T.text,
+                    lineHeight: 1.55,
+                    marginBottom: 18,
+                  }}
+                >
+                  Your performance starts tracking the moment you make your
+                  first call or book your first appointment. Everything you do
+                  in the portal rolls into these numbers. Tap Leads to begin.
+                </div>
+                <button
+                  className="pulse-btn"
+                  onClick={onGoToLeads}
+                  disabled={!onGoToLeads}
+                  style={{
+                    padding: "14px 22px",
+                    borderRadius: 12,
+                    border: "none",
+                    background: `linear-gradient(135deg,${T.accent},${T.blue})`,
+                    color: T.bg,
+                    fontSize: 14,
+                    fontWeight: 800,
+                    letterSpacing: "0.04em",
+                    cursor: "pointer",
+                    fontFamily: "'Outfit',sans-serif",
+                  }}
+                >
+                  Go to Leads →
+                </button>
+              </div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                    gap: 8,
+                    marginBottom: 10,
+                  }}
+                >
+                  <KPI
+                    label="Calls Today"
+                    value={loading ? <SkelBar w={36} h={24} /> : callsToday}
+                    color={T.accent}
+                    sub={
+                      loading
+                        ? null
+                        : callsToday > 0
+                          ? `${callsTodayConnected} connected`
+                          : "none yet"
+                    }
+                  />
+                  <KPI
+                    label="Appts"
+                    value={loading ? <SkelBar w={36} h={24} /> : appts}
+                    color={T.blue}
+                  />
+                  <KPI
+                    label="Showed"
+                    value={loading ? <SkelBar w={36} h={24} /> : showed}
+                    color={T.accent}
+                  />
+                  <KPI
+                    label="Sales"
+                    value={loading ? <SkelBar w={36} h={24} /> : sales}
+                    color={T.orange}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                    gap: 8,
+                    marginBottom: 18,
+                  }}
+                >
+                  <KPI
+                    label="Show Rate"
+                    value={
+                      loading ? (
+                        <SkelBar w={46} h={24} />
+                      ) : (
+                        `${Math.round(showRate)}%`
+                      )
+                    }
+                    color={showRateColor}
+                    sub={
+                      loading ? null : `target ${AIRA_STANDARDS.minShowRate}%+`
+                    }
+                  />
+                  <KPI
+                    label="Close Rate"
+                    value={
+                      loading ? (
+                        <SkelBar w={46} h={24} />
+                      ) : (
+                        `${Math.round(closeRate)}%`
+                      )
+                    }
+                    color={closeRateColor}
+                    sub={
+                      loading ? null : `target ${AIRA_STANDARDS.minCloseRate}%+`
+                    }
+                  />
+                  <KPI
+                    label="Revenue"
+                    value={
+                      loading ? (
+                        <SkelBar w={60} h={24} />
+                      ) : (
+                        `$${revenue.toLocaleString()}`
+                      )
+                    }
+                    color={T.accent}
+                  />
+                  <KPI
+                    label="Calls Mo."
+                    value={loading ? <SkelBar w={36} h={24} /> : callsMonth}
+                    color={T.blue}
+                  />
+                </div>
+              </>
+            )}
+
+            <div
+              style={{
+                background: T.card,
+                border: `1px solid ${T.border}`,
+                borderRadius: 14,
+                padding: 18,
+                opacity: isEmpty ? 0.55 : 1,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.dim,
+                  marginBottom: 12,
+                }}
+              >
+                🎯 {isEmpty ? "Your monthly targets" : "What's expected of you"}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[
+                  {
+                    label: "Shows per month",
+                    target: `${AIRA_STANDARDS.minShows}+`,
+                    actual: showed,
+                    hit: showed >= AIRA_STANDARDS.minShows,
+                  },
+                  {
+                    label: "Sales per month",
+                    target: `${AIRA_STANDARDS.minSales}+`,
+                    actual: sales,
+                    hit: sales >= AIRA_STANDARDS.minSales,
+                  },
+                  {
+                    label: "Show rate",
+                    target: `${AIRA_STANDARDS.minShowRate}%+`,
+                    actual: `${Math.round(showRate)}%`,
+                    hit: showRate >= AIRA_STANDARDS.minShowRate,
+                  },
+                  {
+                    label: "Close rate",
+                    target: `${AIRA_STANDARDS.minCloseRate}%+`,
+                    actual: `${Math.round(closeRate)}%`,
+                    hit: closeRate >= AIRA_STANDARDS.minCloseRate,
+                  },
+                ].map((r, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "6px 0",
+                      borderBottom: i < 3 ? `1px solid ${T.border}` : "none",
+                    }}
+                  >
+                    <span
+                      style={{ fontSize: 13, color: T.text, fontWeight: 600 }}
+                    >
+                      {r.label}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontFamily: "'Outfit',sans-serif",
+                        fontWeight: 700,
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: isEmpty ? T.muted : r.hit ? T.accent : T.red,
+                        }}
+                      >
+                        {r.actual}
+                      </span>
+                      <span style={{ color: T.muted }}> / {r.target}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function TeamRepCard({ rep, onSelect }) {
+        const shows = Number(rep.showed) || 0;
+        const noShows = Number(rep.no_showed) || 0;
+        const appts = Number(rep.appointments) || 0;
+        const sales = Number(rep.sales) || 0;
+        const calls = Number(rep.calls_this_month) || 0;
+        const rev = Number(rep.revenue) || 0;
+        const showRate = Number(rep.show_rate) || 0;
+        const closeRate = Number(rep.close_rate) || 0;
+        const hitting =
+          showRate >= AIRA_STANDARDS.minShowRate &&
+          closeRate >= AIRA_STANDARDS.minCloseRate &&
+          shows > 0;
+        const behind =
+          shows + noShows + sales === 0
+            ? false
+            : showRate < 40 || (closeRate < 40 && shows > 0);
+        const borderColor = hitting
+          ? TRIAGE_GREEN
+          : behind
+            ? TRIAGE_RED
+            : T.borderLight;
+        const initial = ((rep.full_name || "?")[0] || "?").toUpperCase();
+        return (
+          <button
+            onClick={() => onSelect(rep)}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              display: "block",
+              padding: 14,
+              background: T.card,
+              border: `1px solid ${T.border}`,
+              borderLeft: `4px solid ${borderColor}`,
+              borderRadius: 12,
+              color: T.text,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 10,
+              }}
+            >
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  background: T.accentDim,
+                  border: `2px solid ${T.accent}44`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  color: T.accent,
+                  fontFamily: "'Outfit',sans-serif",
+                  flexShrink: 0,
+                }}
+              >
+                {initial}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: T.white,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {rep.full_name || "—"}
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: T.dim,
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {(rep.role || "").replace(/_/g, " ")}
+                </div>
+              </div>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 6,
+                marginBottom: 8,
+              }}
+            >
+              <LocStat label="Calls" value={calls} color={T.blue} />
+              <LocStat label="Appts" value={appts} color={T.accent} />
+              <LocStat label="Shows" value={shows} color={T.accent} />
+              <LocStat label="Sales" value={sales} color={T.orange} />
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 6,
+              }}
+            >
+              <LocStat
+                label="Show Rate"
+                value={`${Math.round(showRate)}%`}
+                color={
+                  showRate >= AIRA_STANDARDS.minShowRate
+                    ? T.accent
+                    : showRate < 40
+                      ? T.red
+                      : T.yellow
+                }
+              />
+              <LocStat
+                label="Close Rate"
+                value={`${Math.round(closeRate)}%`}
+                color={
+                  closeRate >= AIRA_STANDARDS.minCloseRate
+                    ? T.accent
+                    : closeRate < 40
+                      ? T.red
+                      : T.yellow
+                }
+              />
+              <LocStat
+                label="Revenue"
+                value={`$${rev.toLocaleString()}`}
+                color={T.accent}
+              />
+            </div>
+          </button>
+        );
+      }
+
+      function TeamSection({
+        selectedLocationId,
+        callLogVersion,
+        onSelectRep,
+      }) {
+        const [team, setTeam] = useState([]);
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState(null);
+
+        const load = useCallback(async () => {
+          if (!selectedLocationId) return;
+          setLoading(true);
+          setError(null);
+          try {
+            const { data, error: err } = await window.supabase.rpc(
+              "location_team_kpis",
+              { p_ghl_location_id: selectedLocationId },
+            );
+            if (err) throw err;
+            setTeam(data || []);
+          } catch (e) {
+            console.error("location_team_kpis failed:", e);
+            setError(e && e.message ? e.message : "Failed to load team");
+          } finally {
+            setLoading(false);
+          }
+          // eslint-disable-next-line
+        }, [selectedLocationId, callLogVersion]);
+
+        useEffect(() => {
+          load();
+        }, [load]);
+
+        const allZero =
+          !loading &&
+          !error &&
+          team.length > 0 &&
+          team.every(
+            (r) =>
+              (Number(r.calls_this_month) || 0) +
+                (Number(r.appointments) || 0) +
+                (Number(r.showed) || 0) +
+                (Number(r.no_showed) || 0) +
+                (Number(r.sales) || 0) ===
+              0,
+          );
+
+        return (
+          <div style={{ marginTop: 20 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: T.dim,
+                marginBottom: 10,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              👥 Team This Month
+            </div>
+            {allZero && (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: T.blueDim,
+                  border: `1px solid ${T.blue}33`,
+                  color: T.blue,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  lineHeight: 1.4,
+                  marginBottom: 12,
+                }}
+              >
+                Team activity begins tracking once reps use the portal to call
+                leads and book appointments. Check back after the first day of
+                real usage.
+              </div>
+            )}
+            {error && (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  background: T.redDim,
+                  border: `1px solid ${T.red}33`,
+                  color: T.red,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  marginBottom: 10,
+                }}
+              >
+                {error}
+              </div>
+            )}
+            {loading && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                {[0, 1].map((i) => (
+                  <div
+                    key={`skel-${i}`}
+                    style={{
+                      padding: 14,
+                      background: T.card,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 12,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                    }}
+                  >
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 10 }}
+                    >
+                      <SkelBar w={32} h={32} radius={16} />
+                      <div
+                        style={{
+                          flex: 1,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                        }}
+                      >
+                        <SkelBar w={120} h={12} />
+                        <SkelBar w={60} h={10} />
+                      </div>
+                    </div>
+                    <SkelBar w={"100%"} h={18} />
+                  </div>
+                ))}
+              </div>
+            )}
+            {!loading && team.length === 0 && !error && (
+              <div
+                style={{
+                  padding: 18,
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 12,
+                  textAlign: "center",
+                  color: T.muted,
+                  fontSize: 12,
+                }}
+              >
+                No active team members linked to this location.
+              </div>
+            )}
+            {!loading && team.length > 0 && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                {team.map((rep) => (
+                  <TeamRepCard
+                    key={rep.user_id}
+                    rep={rep}
+                    onSelect={onSelectRep}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
       // ── Authenticated App ──
       function AuthenticatedApp({
         profile,
@@ -4040,6 +5691,32 @@
         const bumpCallLogVersion = useCallback(
           () => setCallLogVersion((v) => v + 1),
           [],
+        );
+
+        // Manager drill-down into a specific rep's personal dashboard
+        const [drilledRep, setDrilledRep] = useState(null);
+        const isSalesRep = profile.role === "sales_rep";
+
+        // Booking modal
+        const [bookingOpen, setBookingOpen] = useState(false);
+        const [bookingContact, setBookingContact] = useState(null);
+        const [bookingInitialQuery, setBookingInitialQuery] = useState("");
+        const [toast, setToast] = useState(null);
+        const openBooking = useCallback(({ contact, query } = {}) => {
+          setBookingContact(contact || null);
+          setBookingInitialQuery(query || "");
+          setBookingOpen(true);
+        }, []);
+        const handleBooked = useCallback(
+          ({ contactName, date, time }) => {
+            setToast({
+              kind: "success",
+              text: `Appointment booked for ${contactName} on ${date} at ${time}`,
+            });
+            bumpCallLogVersion();
+            setTimeout(() => setToast(null), 4500);
+          },
+          [bumpCallLogVersion],
         );
 
         // Triage data (multi-location only)
@@ -4145,10 +5822,30 @@
                 lead={selectedLead}
                 onBack={() => setSelectedLead(null)}
                 selectedLocationId={selectedLocationId}
+                onBook={() =>
+                  openBooking({
+                    query:
+                      `${selectedLead.first || ""} ${selectedLead.last || ""}`.trim(),
+                  })
+                }
               />
             );
           let dashboardEl;
-          if (viewMode === "triage" && multi) {
+          if (isSalesRep) {
+            dashboardEl = (
+              <RepPersonalDashboard
+                userId={profile.id}
+                userName={profile.full_name || profile.email}
+                isSelf={true}
+                selectedLocationId={selectedLocationId}
+                callLogVersion={callLogVersion}
+                onGoToLeads={() => {
+                  setScreen("leads");
+                  setSelectedLead(null);
+                }}
+              />
+            );
+          } else if (viewMode === "triage" && multi) {
             dashboardEl = (
               <TriageView
                 rows={triageRows}
@@ -4167,11 +5864,20 @@
             );
           } else {
             dashboardEl = (
-              <DashboardScreen
-                hideLeaderboard={hideLeaderboard}
-                selectedLocationId={selectedLocationId}
-                callLogVersion={callLogVersion}
-              />
+              <>
+                <DashboardScreen
+                  hideLeaderboard={hideLeaderboard}
+                  selectedLocationId={selectedLocationId}
+                  callLogVersion={callLogVersion}
+                />
+                <div style={{ padding: "0 16px 24px" }}>
+                  <TeamSection
+                    selectedLocationId={selectedLocationId}
+                    callLogVersion={callLogVersion}
+                    onSelectRep={setDrilledRep}
+                  />
+                </div>
+              </>
             );
           }
           switch (screen) {
@@ -4195,8 +5901,9 @@
             case "appointments":
               return (
                 <AppointmentsScreen
-                  data={data}
                   selectedLocationId={selectedLocationId}
+                  onBook={() => openBooking()}
+                  callLogVersion={callLogVersion}
                 />
               );
             default:
@@ -4573,6 +6280,73 @@
             )}
 
             <CallOutcomeModal profile={profile} onLogged={bumpCallLogVersion} />
+
+            {bookingOpen && (
+              <BookAppointmentModal
+                profile={profile}
+                selectedLocationId={selectedLocationId}
+                accessibleLocations={accessibleLocations}
+                initialContact={bookingContact}
+                initialContactQuery={bookingInitialQuery}
+                onClose={() => {
+                  setBookingOpen(false);
+                  setBookingContact(null);
+                  setBookingInitialQuery("");
+                }}
+                onBooked={handleBooked}
+              />
+            )}
+
+            {toast && (
+              <div
+                className="fade-in"
+                style={{
+                  position: "fixed",
+                  bottom: 88,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: "calc(100% - 32px)",
+                  maxWidth: 448,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  background: toast.kind === "success" ? T.accentDim : T.redDim,
+                  border: `1px solid ${toast.kind === "success" ? T.accent : T.red}44`,
+                  color: toast.kind === "success" ? T.accent : T.red,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  textAlign: "center",
+                  zIndex: 320,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                }}
+              >
+                {toast.text}
+              </div>
+            )}
+
+            {drilledRep && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 220,
+                  background: T.bg,
+                  overflowY: "auto",
+                  maxWidth: 480,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: "100%",
+                }}
+              >
+                <RepPersonalDashboard
+                  userId={drilledRep.user_id}
+                  userName={drilledRep.full_name}
+                  isSelf={false}
+                  selectedLocationId={selectedLocationId}
+                  callLogVersion={callLogVersion}
+                  onClose={() => setDrilledRep(null)}
+                />
+              </div>
+            )}
           </div>
         );
       }
@@ -4607,7 +6381,7 @@
             }
             const { data: locs, error: lerr } = await window.supabase
               .from("locations")
-              .select("id, ghl_location_id, name")
+              .select("id, ghl_location_id, name, timezone")
               .in("ghl_location_id", ids)
               .eq("active", true)
               .order("name");
