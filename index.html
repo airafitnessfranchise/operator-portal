@@ -2724,6 +2724,478 @@
         );
       }
 
+      // ── Triage View (VP's weapon) ──
+      const TRIAGE_RED = "#ef4444";
+      const TRIAGE_AMBER = "#f59e0b";
+      const TRIAGE_GREEN = "#10b981";
+
+      function formatCurrency(n) {
+        return "$" + (Number(n) || 0).toLocaleString();
+      }
+
+      function splitDiagnosis(text) {
+        if (!text) return { head: "", body: "" };
+        const i = text.indexOf(".");
+        if (i < 0) return { head: text, body: "" };
+        return { head: text.slice(0, i + 1), body: text.slice(i + 1).trim() };
+      }
+
+      function TriageCard({ row, onOpen }) {
+        const status = row.status_color;
+        const isRed = status === "red";
+        const isYellow = status === "yellow";
+        const color = isRed
+          ? TRIAGE_RED
+          : isYellow
+            ? TRIAGE_AMBER
+            : TRIAGE_GREEN;
+        const bgTint = isRed
+          ? "rgba(239,68,68,0.07)"
+          : isYellow
+            ? "rgba(245,158,11,0.07)"
+            : "rgba(16,185,129,0.05)";
+        const pillLabel = isRed
+          ? `${formatCurrency(row.floor_gap_dollars)} on the table`
+          : isYellow
+            ? `${formatCurrency(row.ceiling_upside_dollars)} upside`
+            : null;
+        const convPct = Math.round(Number(row.current_conversion_pct) || 0);
+        const perfLine = `${row.ad_leads_count} ad leads → ${row.actual_sales} sales (${convPct}%). Should be ${row.floor_sales_target}+.`;
+        const diag = splitDiagnosis(row.primary_diagnosis);
+
+        return (
+          <div
+            style={{
+              background: bgTint,
+              borderLeft: `4px solid ${color}`,
+              borderTop: `1px solid ${T.border}`,
+              borderRight: `1px solid ${T.border}`,
+              borderBottom: `1px solid ${T.border}`,
+              borderRadius: 12,
+              padding: 18,
+              marginBottom: 12,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: 12,
+                marginBottom: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  color: T.white,
+                  fontFamily: "'Outfit',sans-serif",
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {row.location_name}
+              </div>
+              {pillLabel && (
+                <div
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 8,
+                    background: color + "22",
+                    color,
+                    fontSize: 12,
+                    fontWeight: 800,
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                  }}
+                >
+                  {pillLabel}
+                </div>
+              )}
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: T.text,
+                marginBottom: 10,
+                lineHeight: 1.4,
+              }}
+            >
+              {perfLine}
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                color: T.white,
+                fontWeight: 500,
+                lineHeight: 1.5,
+                marginBottom: 12,
+              }}
+            >
+              <span style={{ color: T.accent, fontWeight: 800 }}>
+                {diag.head}
+              </span>
+              {diag.body && <> {diag.body}</>}
+            </div>
+            {row.extra_credit_leads_count > 0 && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: T.dim,
+                  marginBottom: 12,
+                  fontStyle: "italic",
+                }}
+              >
+                +{row.extra_credit_leads_count} organic conversations helping
+              </div>
+            )}
+            <button
+              onClick={() => onOpen(row.ghl_location_id)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                borderRadius: 8,
+                border: `1px solid ${T.accent}33`,
+                background: T.accentDim,
+                color: T.accent,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Open location →
+            </button>
+          </div>
+        );
+      }
+
+      function TriageView({
+        rows,
+        loading,
+        error,
+        onRefresh,
+        onSelectLocation,
+      }) {
+        const [greenExpanded, setGreenExpanded] = useState(false);
+
+        const reds = rows
+          .filter((r) => r.status_color === "red")
+          .sort(
+            (a, b) =>
+              (Number(b.floor_gap_dollars) || 0) -
+              (Number(a.floor_gap_dollars) || 0),
+          );
+        const yellows = rows
+          .filter((r) => r.status_color === "yellow")
+          .sort(
+            (a, b) =>
+              (Number(b.ceiling_upside_dollars) || 0) -
+              (Number(a.ceiling_upside_dollars) || 0),
+          );
+        const greens = rows.filter((r) => r.status_color === "green");
+        const grays = rows.filter((r) => r.status_color === "gray");
+
+        const totalRed = reds.reduce(
+          (s, r) => s + (Number(r.floor_gap_dollars) || 0),
+          0,
+        );
+        const totalYellow = yellows.reduce(
+          (s, r) => s + (Number(r.ceiling_upside_dollars) || 0),
+          0,
+        );
+
+        const monthLabel = new Date()
+          .toLocaleDateString("en-US", { month: "long", year: "numeric" })
+          .toUpperCase();
+
+        const bannerColor =
+          reds.length > 0
+            ? TRIAGE_RED
+            : yellows.length > 0
+              ? TRIAGE_AMBER
+              : TRIAGE_GREEN;
+        const bannerEmoji =
+          reds.length > 0 ? "🔴" : yellows.length > 0 ? "🟡" : "🟢";
+        const bannerText =
+          reds.length > 0
+            ? `${reds.length} location${reds.length === 1 ? "" : "s"} need attention today · ${formatCurrency(totalRed)} on the table across your territory`
+            : yellows.length > 0
+              ? `${yellows.length} location${yellows.length === 1 ? "" : "s"} running under the Aira standard · ${formatCurrency(totalYellow)} ceiling upside available`
+              : "All locations running healthy.";
+
+        return (
+          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+            <div style={{ marginBottom: 18 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.dim,
+                }}
+              >
+                {monthLabel}
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: T.white,
+                  fontFamily: "'Outfit',sans-serif",
+                  marginTop: 2,
+                }}
+              >
+                Triage
+              </div>
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: T.redDim,
+                  border: `1px solid ${T.red}33`,
+                  marginBottom: 16,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <div style={{ color: T.red, fontSize: 12, fontWeight: 600 }}>
+                  Couldn't load triage data.
+                </div>
+                <button
+                  onClick={onRefresh}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${T.red}44`,
+                    background: "transparent",
+                    color: T.red,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {/* Call-to-action banner */}
+            {!loading && !error && (
+              <div
+                style={{
+                  padding: "14px 16px",
+                  borderRadius: 12,
+                  background: bannerColor + "14",
+                  border: `1px solid ${bannerColor}44`,
+                  marginBottom: 18,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <span style={{ fontSize: 16 }}>{bannerEmoji}</span>
+                <div
+                  style={{
+                    color: T.white,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {bannerText}
+                </div>
+              </div>
+            )}
+
+            {loading && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 12 }}
+              >
+                {[0, 1].map((i) => (
+                  <div
+                    key={`skel-${i}`}
+                    style={{
+                      background: T.card,
+                      borderLeft: `4px solid ${T.border}`,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 12,
+                      padding: 18,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                      }}
+                    >
+                      <SkelBar w={180} h={18} />
+                      <SkelBar w={120} h={20} />
+                    </div>
+                    <SkelBar w={"80%"} h={12} />
+                    <SkelBar w={"95%"} h={16} />
+                    <SkelBar w={120} h={28} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Red cards */}
+            {!loading &&
+              reds.map((r) => (
+                <TriageCard
+                  key={r.ghl_location_id}
+                  row={r}
+                  onOpen={onSelectLocation}
+                />
+              ))}
+
+            {/* Yellow cards */}
+            {!loading &&
+              yellows.map((r) => (
+                <TriageCard
+                  key={r.ghl_location_id}
+                  row={r}
+                  onOpen={onSelectLocation}
+                />
+              ))}
+
+            {/* Green (collapsed) */}
+            {!loading && greens.length > 0 && (
+              <div
+                style={{
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  borderLeft: `4px solid ${TRIAGE_GREEN}`,
+                  borderRadius: 12,
+                  marginBottom: 12,
+                  overflow: "hidden",
+                }}
+              >
+                <button
+                  onClick={() => setGreenExpanded((v) => !v)}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "14px 18px",
+                    background: "transparent",
+                    border: "none",
+                    color: T.text,
+                    cursor: "pointer",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <span
+                    style={{ fontSize: 13, fontWeight: 700, color: T.white }}
+                  >
+                    {greens.length} location{greens.length === 1 ? "" : "s"}{" "}
+                    running healthy
+                  </span>
+                  <span style={{ fontSize: 11, color: T.dim }}>
+                    {greenExpanded ? "▴ Hide" : "▾ Show"}
+                  </span>
+                </button>
+                {greenExpanded && (
+                  <div style={{ padding: "0 14px 14px" }}>
+                    {greens.map((r) => (
+                      <TriageCard
+                        key={r.ghl_location_id}
+                        row={r}
+                        onOpen={onSelectLocation}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Gray (insufficient data) */}
+            {!loading && grays.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    color: T.muted,
+                    marginBottom: 8,
+                  }}
+                >
+                  Insufficient data
+                </div>
+                {grays.map((r) => (
+                  <div
+                    key={r.ghl_location_id}
+                    style={{
+                      background: T.card,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 10,
+                      padding: "12px 16px",
+                      marginBottom: 8,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: T.text,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {r.location_name}
+                      </div>
+                      <div style={{ fontSize: 11, color: T.muted }}>
+                        Need 10+ ad leads to diagnose ({r.ad_leads_count} so
+                        far)
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onSelectLocation(r.ghl_location_id)}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        border: `1px solid ${T.border}`,
+                        background: "transparent",
+                        color: T.dim,
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Open →
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
       // ── Territory Dashboard (multi-location overview) ──
       function LocStat({ label, value, color = T.accent }) {
         return (
@@ -3157,12 +3629,82 @@
         const [viewMode, setViewModeState] = useState(() => {
           if (accessibleLocations.length <= 1) return "location";
           const stored = localStorage.getItem("aira_view_mode");
-          return stored === "location" ? "location" : "territory";
+          if (
+            stored === "location" ||
+            stored === "territory" ||
+            stored === "triage"
+          )
+            return stored;
+          return "territory";
         });
+        const [previousViewMode, setPreviousViewMode] = useState(null);
         const setViewMode = useCallback((mode) => {
           localStorage.setItem("aira_view_mode", mode);
           setViewModeState(mode);
         }, []);
+
+        // Triage data (multi-location only)
+        const [triageRows, setTriageRows] = useState([]);
+        const [triageLoading, setTriageLoading] = useState(
+          accessibleLocations.length > 1,
+        );
+        const [triageError, setTriageError] = useState(null);
+        const [triageReconciled, setTriageReconciled] = useState(false);
+
+        const loadTriage = useCallback(async () => {
+          if (accessibleLocations.length <= 1) {
+            setTriageLoading(false);
+            return;
+          }
+          setTriageLoading(true);
+          setTriageError(null);
+          try {
+            const ids = accessibleLocations.map((l) => l.ghl_location_id);
+            const { data: rows, error: err } = await window.supabase.rpc(
+              "location_triage",
+              { p_ghl_location_ids: ids },
+            );
+            if (err) throw err;
+            setTriageRows(rows || []);
+          } catch (e) {
+            console.error("location_triage failed:", e);
+            setTriageError(
+              e && e.message ? e.message : "Failed to load triage data",
+            );
+          } finally {
+            setTriageLoading(false);
+          }
+        }, [accessibleLocations]);
+
+        useEffect(() => {
+          loadTriage();
+        }, [loadTriage]);
+
+        const hasAnyRed = triageRows.some((r) => r.status_color === "red");
+
+        // Reconcile stored viewMode with current red state once, after triage loads
+        useEffect(() => {
+          if (triageLoading || triageReconciled) return;
+          if (accessibleLocations.length <= 1) {
+            setTriageReconciled(true);
+            return;
+          }
+          const stored = localStorage.getItem("aira_view_mode");
+          let target;
+          if (stored === "location") target = "location";
+          else if (stored === "triage")
+            target = hasAnyRed ? "triage" : "territory";
+          else if (stored === "territory") target = "territory";
+          else target = hasAnyRed ? "triage" : "territory";
+          setViewModeState(target);
+          localStorage.setItem("aira_view_mode", target);
+          setTriageReconciled(true);
+        }, [
+          triageLoading,
+          triageReconciled,
+          hasAnyRed,
+          accessibleLocations.length,
+        ]);
         const data = getSeedData();
         const unreadCount = data.conversations.reduce(
           (s, c) => s + c.unread,
@@ -3188,6 +3730,14 @@
           : "—";
         const multi = accessibleLocations.length > 1;
 
+        const openLocationFromOverview = (id) => {
+          setPreviousViewMode(viewMode);
+          setSelectedLocationId(id);
+          setViewMode("location");
+          setSelectedLead(null);
+          setScreen("dashboard");
+        };
+
         const renderScreen = () => {
           if (selectedLead)
             return (
@@ -3196,21 +3746,32 @@
                 onBack={() => setSelectedLead(null)}
               />
             );
-          const dashboardEl =
-            viewMode === "territory" && multi ? (
+          let dashboardEl;
+          if (viewMode === "triage" && multi) {
+            dashboardEl = (
+              <TriageView
+                rows={triageRows}
+                loading={triageLoading}
+                error={triageError}
+                onRefresh={loadTriage}
+                onSelectLocation={openLocationFromOverview}
+              />
+            );
+          } else if (viewMode === "territory" && multi) {
+            dashboardEl = (
               <TerritoryDashboard
                 accessibleLocations={accessibleLocations}
-                onSelectLocation={(id) => {
-                  setSelectedLocationId(id);
-                  setViewMode("location");
-                }}
+                onSelectLocation={openLocationFromOverview}
               />
-            ) : (
+            );
+          } else {
+            dashboardEl = (
               <DashboardScreen
                 hideLeaderboard={hideLeaderboard}
                 selectedLocationId={selectedLocationId}
               />
             );
+          }
           switch (screen) {
             case "dashboard":
               return dashboardEl;
@@ -3307,12 +3868,24 @@
                     <div
                       style={{
                         fontSize: 10,
-                        color: viewMode === "territory" ? T.accent : T.dim,
+                        color:
+                          viewMode === "triage"
+                            ? TRIAGE_RED
+                            : viewMode === "territory"
+                              ? T.accent
+                              : T.dim,
                         letterSpacing:
-                          viewMode === "territory" ? "0.12em" : "0.04em",
-                        fontWeight: viewMode === "territory" ? 700 : 400,
+                          viewMode === "triage" || viewMode === "territory"
+                            ? "0.12em"
+                            : "0.04em",
+                        fontWeight:
+                          viewMode === "triage" || viewMode === "territory"
+                            ? 700
+                            : 400,
                         textTransform:
-                          viewMode === "territory" ? "uppercase" : "none",
+                          viewMode === "triage" || viewMode === "territory"
+                            ? "uppercase"
+                            : "none",
                         display: "flex",
                         alignItems: "center",
                         gap: 4,
@@ -3326,7 +3899,11 @@
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {viewMode === "territory" ? "TERRITORY" : shortLabel}
+                        {viewMode === "triage"
+                          ? "TRIAGE"
+                          : viewMode === "territory"
+                            ? "TERRITORY"
+                            : shortLabel}
                       </span>
                       {multi && viewMode === "location" && (
                         <span style={{ fontSize: 8, color: T.accent }}>▾</span>
@@ -3384,31 +3961,43 @@
                   <div style={{ fontSize: 10, color: T.muted }}>{today}</div>
                 </button>
               </div>
-              {multi && viewMode === "location" && (
-                <button
-                  onClick={() => {
-                    setViewMode("territory");
-                    setPickerOpen(false);
-                    setSelectedLead(null);
-                    setScreen("dashboard");
-                  }}
-                  style={{
-                    marginTop: 10,
-                    padding: "6px 12px",
-                    borderRadius: 8,
-                    border: `1px solid ${T.accent}33`,
-                    background: T.accentDim,
-                    color: T.accent,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    letterSpacing: "0.04em",
-                    cursor: "pointer",
-                    alignSelf: "flex-start",
-                  }}
-                >
-                  ← Back to territory
-                </button>
-              )}
+              {multi &&
+                viewMode === "location" &&
+                (() => {
+                  const target =
+                    previousViewMode === "triage" && hasAnyRed
+                      ? "triage"
+                      : "territory";
+                  const label =
+                    target === "triage"
+                      ? "← Back to triage"
+                      : "← Back to territory";
+                  return (
+                    <button
+                      onClick={() => {
+                        setViewMode(target);
+                        setPickerOpen(false);
+                        setSelectedLead(null);
+                        setScreen("dashboard");
+                      }}
+                      style={{
+                        marginTop: 10,
+                        padding: "6px 12px",
+                        borderRadius: 8,
+                        border: `1px solid ${T.accent}33`,
+                        background: T.accentDim,
+                        color: T.accent,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        letterSpacing: "0.04em",
+                        cursor: "pointer",
+                        alignSelf: "flex-start",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })()}
               {pickerOpen && multi && viewMode === "location" && (
                 <div
                   style={{
@@ -3454,7 +4043,48 @@
               )}
             </div>
 
-            <div style={{ paddingBottom: 72 }}>{renderScreen()}</div>
+            <div style={{ paddingBottom: 72 }}>
+              {multi &&
+                hasAnyRed &&
+                (viewMode === "triage" || viewMode === "territory") &&
+                screen === "dashboard" &&
+                !selectedLead && (
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 6,
+                      padding: "14px 16px 0",
+                    }}
+                  >
+                    {[
+                      { key: "triage", label: "Triage" },
+                      { key: "territory", label: "Overview" },
+                    ].map((t) => {
+                      const active = viewMode === t.key;
+                      return (
+                        <button
+                          key={t.key}
+                          onClick={() => setViewMode(t.key)}
+                          style={{
+                            padding: "6px 14px",
+                            borderRadius: 999,
+                            border: `1px solid ${active ? T.accent : T.border}`,
+                            background: active ? T.accentDim : "transparent",
+                            color: active ? T.accent : T.dim,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            letterSpacing: "0.04em",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              {renderScreen()}
+            </div>
 
             {/* Bottom Nav */}
             <div
