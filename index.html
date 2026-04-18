@@ -101,6 +101,24 @@
       .spinner {
         animation: spin 0.8s linear infinite;
       }
+      @keyframes shimmer {
+        0% {
+          background-position: -200% 0;
+        }
+        100% {
+          background-position: 200% 0;
+        }
+      }
+      .skel {
+        background: linear-gradient(
+          90deg,
+          #1f2233 0%,
+          #2a2d3e 50%,
+          #1f2233 100%
+        );
+        background-size: 200% 100%;
+        animation: shimmer 1.4s ease-in-out infinite;
+      }
     </style>
   </head>
   <body>
@@ -810,21 +828,99 @@
       }
 
       // ── Dashboard Screen ──
-      function DashboardScreen({ data, hideLeaderboard }) {
-        const s = data.stats;
+      function SkelBar({ w = 60, h = 20, radius = 6 }) {
+        return (
+          <div
+            className="skel"
+            style={{
+              width: w,
+              height: h,
+              borderRadius: radius,
+              display: "inline-block",
+            }}
+          />
+        );
+      }
+
+      function titleCaseRole(role) {
+        return (role || "")
+          .split("_")
+          .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ""))
+          .join(" ");
+      }
+
+      function DashboardScreen({ hideLeaderboard, selectedLocationId }) {
+        const [kpis, setKpis] = useState(null);
+        const [leaderboard, setLeaderboard] = useState([]);
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState(null);
+
+        const load = useCallback(async () => {
+          if (!selectedLocationId) return;
+          setLoading(true);
+          setError(null);
+          try {
+            const [kpisRes, lbRes] = await Promise.all([
+              window.supabase.rpc("dashboard_kpis", {
+                p_ghl_location_id: selectedLocationId,
+              }),
+              window.supabase.rpc("rep_leaderboard", {
+                p_ghl_location_id: selectedLocationId,
+              }),
+            ]);
+            if (kpisRes.error) throw kpisRes.error;
+            if (lbRes.error) throw lbRes.error;
+            setKpis(
+              kpisRes.data && kpisRes.data[0]
+                ? kpisRes.data[0]
+                : { leads: 0, shows: 0, no_shows: 0, sales: 0, revenue: 0 },
+            );
+            setLeaderboard(lbRes.data || []);
+          } catch (e) {
+            console.error("dashboard RPC failed:", e);
+            setError(e && e.message ? e.message : "Failed to load dashboard");
+          } finally {
+            setLoading(false);
+          }
+        }, [selectedLocationId]);
+
+        useEffect(() => {
+          load();
+        }, [load]);
+
+        const k = kpis || {
+          leads: 0,
+          shows: 0,
+          no_shows: 0,
+          sales: 0,
+          revenue: 0,
+        };
+        const leads = Number(k.leads) || 0;
+        const shows = Number(k.shows) || 0;
+        const noShows = Number(k.no_shows) || 0;
+        const sales = Number(k.sales) || 0;
+        const revenue = Number(k.revenue) || 0;
         const showRate =
-          s.shows + s.noShows > 0
-            ? Math.round((s.shows / (s.shows + s.noShows + s.cancelled)) * 100)
+          shows + noShows > 0
+            ? Math.round((shows / (shows + noShows)) * 100)
             : 0;
-        const closeRate =
-          s.shows > 0 ? Math.round((s.sales / s.shows) * 100) : 0;
-        const cpl =
-          s.adSpend > 0 ? (s.adSpend / s.totalLeads).toFixed(2) : "0.00";
-        const avgSale = s.sales > 0 ? Math.round(s.revenue / s.sales) : 0;
+        const closeRate = leads > 0 ? Math.round((sales / leads) * 100) : 0;
+        const avgSale = sales > 0 ? Math.round(revenue / sales) : 0;
+        const emptyCache =
+          !loading &&
+          !error &&
+          leads === 0 &&
+          shows === 0 &&
+          noShows === 0 &&
+          sales === 0 &&
+          revenue === 0;
+        const monthLabel = new Date()
+          .toLocaleDateString("en-US", { month: "long", year: "numeric" })
+          .toUpperCase();
 
         const targets = [
-          { label: "Shows", cur: s.shows, tgt: 15, color: T.accent },
-          { label: "Sales", cur: s.sales, tgt: 15, color: T.orange },
+          { label: "Shows", cur: shows, tgt: 15, color: T.accent },
+          { label: "Sales", cur: sales, tgt: 15, color: T.orange },
           {
             label: "Close Rate",
             cur: closeRate,
@@ -834,7 +930,7 @@
           },
           {
             label: "Revenue",
-            cur: s.revenue,
+            cur: revenue,
             tgt: 10000,
             color: T.accent,
             money: true,
@@ -853,7 +949,7 @@
                   color: T.dim,
                 }}
               >
-                April 2026
+                {monthLabel}
               </div>
               <div
                 style={{
@@ -868,6 +964,76 @@
               </div>
             </div>
 
+            {error && (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: T.redDim,
+                  border: `1px solid ${T.red}33`,
+                  marginBottom: 16,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <div style={{ color: T.red, fontSize: 12, fontWeight: 600 }}>
+                  Couldn't load dashboard data.
+                </div>
+                <button
+                  onClick={load}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${T.red}44`,
+                    background: "transparent",
+                    color: T.red,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {emptyCache && (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: T.blueDim,
+                  border: `1px solid ${T.blue}33`,
+                  marginBottom: 16,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <div style={{ color: T.blue, fontSize: 12, fontWeight: 600 }}>
+                  Syncing your Fox Lake data… refresh in a minute.
+                </div>
+                <button
+                  onClick={load}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${T.blue}44`,
+                    background: "transparent",
+                    color: T.blue,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Refresh
+                </button>
+              </div>
+            )}
+
             <div
               style={{
                 display: "grid",
@@ -878,45 +1044,49 @@
             >
               <KPI
                 label="Leads"
-                value={s.totalLeads}
+                value={loading ? <SkelBar w={46} h={26} /> : leads}
                 icon="👥"
                 color={T.blue}
-                sub={`CPL: $${cpl}`}
               />
               <KPI
                 label="Shows"
-                value={s.shows}
+                value={loading ? <SkelBar w={46} h={26} /> : shows}
                 icon="✓"
                 color={T.accent}
-                sub={`${showRate}% show rate`}
+                sub={loading ? null : `${showRate}% show rate`}
               />
               <KPI
                 label="No Shows"
-                value={s.noShows}
+                value={loading ? <SkelBar w={46} h={26} /> : noShows}
                 icon="✗"
                 color={T.red}
-                sub={`${s.cancelled} cancelled`}
               />
               <KPI
                 label="Sales"
-                value={s.sales}
+                value={loading ? <SkelBar w={46} h={26} /> : sales}
                 icon="🔥"
                 color={T.orange}
-                sub={`${closeRate}% close rate`}
+                sub={loading ? null : `${closeRate}% close rate`}
               />
               <KPI
                 label="Revenue"
-                value={`$${s.revenue.toLocaleString()}`}
+                value={
+                  loading ? (
+                    <SkelBar w={70} h={26} />
+                  ) : (
+                    `$${revenue.toLocaleString()}`
+                  )
+                }
                 icon="$"
                 color={T.accent}
-                sub={`$${avgSale} avg/sale`}
+                sub={loading ? null : `$${avgSale.toLocaleString()} avg/sale`}
               />
               <KPI
                 label="Ad Spend"
-                value={`$${s.adSpend}`}
+                value="—"
                 icon="📣"
                 color={T.yellow}
-                sub={`${s.totalLeads} leads`}
+                sub="(syncing)"
               />
             </div>
 
@@ -955,26 +1125,31 @@
                         justifyContent: "space-between",
                         marginBottom: 5,
                         fontSize: 12,
+                        alignItems: "center",
                       }}
                     >
                       <span style={{ color: T.text, fontWeight: 600 }}>
                         {t.label}
                       </span>
-                      <span
-                        style={{
-                          color: ok ? T.accent : T.red,
-                          fontWeight: 700,
-                          fontFamily: "'Outfit',sans-serif",
-                        }}
-                      >
-                        {t.money ? `$${t.cur.toLocaleString()}` : t.cur}
-                        {t.suf || ""}
-                        <span style={{ color: T.muted }}>
-                          {" "}
-                          / {t.money ? `$${t.tgt.toLocaleString()}` : t.tgt}
+                      {loading ? (
+                        <SkelBar w={100} h={14} />
+                      ) : (
+                        <span
+                          style={{
+                            color: ok ? T.accent : T.red,
+                            fontWeight: 700,
+                            fontFamily: "'Outfit',sans-serif",
+                          }}
+                        >
+                          {t.money ? `$${t.cur.toLocaleString()}` : t.cur}
                           {t.suf || ""}
+                          <span style={{ color: T.muted }}>
+                            {" "}
+                            / {t.money ? `$${t.tgt.toLocaleString()}` : t.tgt}
+                            {t.suf || ""}
+                          </span>
                         </span>
-                      </span>
+                      )}
                     </div>
                     <div
                       style={{
@@ -986,7 +1161,7 @@
                     >
                       <div
                         style={{
-                          width: `${pct}%`,
+                          width: loading ? "0%" : `${pct}%`,
                           height: "100%",
                           borderRadius: 3,
                           background: ok ? t.color : T.red,
@@ -1020,13 +1195,10 @@
                 >
                   🏆 Rep Leaderboard
                 </div>
-                {data.reps.map((r, i) => {
-                  const cr =
-                    r.shows > 0 ? Math.round((r.sales / r.shows) * 100) : 0;
-                  const colors = [T.accent, T.orange, T.purple, T.blue];
-                  return (
+                {loading &&
+                  [0, 1, 2].map((i) => (
                     <div
-                      key={i}
+                      key={`skel-${i}`}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -1035,85 +1207,139 @@
                         gap: 12,
                       }}
                     >
+                      <SkelBar w={36} h={36} radius={18} />
                       <div
                         style={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: "50%",
-                          background: `${colors[i]}22`,
-                          border: `2px solid ${colors[i]}44`,
+                          flex: 1,
                           display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 14,
-                          fontWeight: 800,
-                          color: colors[i],
+                          flexDirection: "column",
+                          gap: 5,
                         }}
                       >
-                        {r.name[0]}
+                        <SkelBar w={110} h={12} />
+                        <SkelBar w={70} h={10} />
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: 14,
-                            fontWeight: 700,
-                            color: T.white,
-                          }}
-                        >
-                          {r.name}
-                        </div>
-                        <div style={{ fontSize: 11, color: T.dim }}>
-                          {r.role}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "center", minWidth: 40 }}>
-                        <div
-                          style={{
-                            fontSize: 16,
-                            fontWeight: 800,
-                            color: T.white,
-                            fontFamily: "'Outfit',sans-serif",
-                          }}
-                        >
-                          {r.sales}
-                        </div>
-                        <div style={{ fontSize: 9, color: T.dim }}>SALES</div>
-                      </div>
-                      <div style={{ textAlign: "center", minWidth: 40 }}>
-                        <span
-                          style={{
-                            padding: "3px 8px",
-                            borderRadius: 5,
-                            fontSize: 11,
-                            fontWeight: 800,
-                            background: cr >= 40 ? T.accentDim : T.redDim,
-                            color: cr >= 40 ? T.accent : T.red,
-                          }}
-                        >
-                          {cr}%
-                        </span>
-                        <div
-                          style={{ fontSize: 9, color: T.dim, marginTop: 2 }}
-                        >
-                          CLOSE
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "center", minWidth: 48 }}>
-                        <div
-                          style={{
-                            fontSize: 14,
-                            fontWeight: 800,
-                            color: T.accent,
-                            fontFamily: "'Outfit',sans-serif",
-                          }}
-                        >
-                          ${r.revenue}
-                        </div>
-                        <div style={{ fontSize: 9, color: T.dim }}>REV</div>
-                      </div>
+                      <SkelBar w={28} h={16} />
+                      <SkelBar w={38} h={16} />
+                      <SkelBar w={48} h={14} />
                     </div>
-                  );
-                })}
+                  ))}
+                {!loading && leaderboard.length === 0 && (
+                  <div
+                    style={{
+                      padding: "18px 20px",
+                      borderTop: `1px solid ${T.border}`,
+                      textAlign: "center",
+                      color: T.muted,
+                      fontSize: 12,
+                    }}
+                  >
+                    No rep activity yet this month.
+                  </div>
+                )}
+                {!loading &&
+                  leaderboard.map((r, i) => {
+                    const rsales = Number(r.sales) || 0;
+                    const rrev = Number(r.revenue) || 0;
+                    const cr = Math.round(Number(r.close_rate) || 0);
+                    const colors = [T.accent, T.orange, T.purple, T.blue];
+                    const color = colors[i % colors.length];
+                    const display = r.full_name || "Unknown";
+                    const initial = (display[0] || "?").toUpperCase();
+                    return (
+                      <div
+                        key={r.ghl_user_id || `row-${i}`}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "12px 20px",
+                          borderTop: `1px solid ${T.border}`,
+                          gap: 12,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: "50%",
+                            background: `${color}22`,
+                            border: `2px solid ${color}44`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {initial}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 700,
+                              color: T.white,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {display}
+                          </div>
+                          <div style={{ fontSize: 11, color: T.dim }}>
+                            {titleCaseRole(r.role)}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "center", minWidth: 40 }}>
+                          <div
+                            style={{
+                              fontSize: 16,
+                              fontWeight: 800,
+                              color: T.white,
+                              fontFamily: "'Outfit',sans-serif",
+                            }}
+                          >
+                            {rsales}
+                          </div>
+                          <div style={{ fontSize: 9, color: T.dim }}>SALES</div>
+                        </div>
+                        <div style={{ textAlign: "center", minWidth: 40 }}>
+                          <span
+                            style={{
+                              padding: "3px 8px",
+                              borderRadius: 5,
+                              fontSize: 11,
+                              fontWeight: 800,
+                              background: cr >= 40 ? T.accentDim : T.redDim,
+                              color: cr >= 40 ? T.accent : T.red,
+                            }}
+                          >
+                            {cr}%
+                          </span>
+                          <div
+                            style={{ fontSize: 9, color: T.dim, marginTop: 2 }}
+                          >
+                            CLOSE
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "center", minWidth: 48 }}>
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 800,
+                              color: T.accent,
+                              fontFamily: "'Outfit',sans-serif",
+                            }}
+                          >
+                            ${rrev.toLocaleString()}
+                          </div>
+                          <div style={{ fontSize: 9, color: T.dim }}>REV</div>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             )}
           </div>
@@ -2547,8 +2773,8 @@
             case "dashboard":
               return (
                 <DashboardScreen
-                  data={data}
                   hideLeaderboard={hideLeaderboard}
+                  selectedLocationId={selectedLocationId}
                 />
               );
             case "leads":
@@ -2562,8 +2788,8 @@
             default:
               return (
                 <DashboardScreen
-                  data={data}
                   hideLeaderboard={hideLeaderboard}
+                  selectedLocationId={selectedLocationId}
                 />
               );
           }

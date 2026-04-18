@@ -1,0 +1,377 @@
+import {
+  createClient,
+  SupabaseClient,
+} from "https://esm.sh/@supabase/supabase-js@2";
+
+const GHL_BASE = "https://services.leadconnectorhq.com";
+const GHL_VERSION = "2021-07-28";
+const MAX_PAGES = 50;
+const REQUEST_DELAY_MS = 150;
+const APPT_WINDOW_PAST_DAYS = 7;
+const APPT_WINDOW_FUTURE_DAYS = 30;
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const JSON_HEADERS = { ...CORS_HEADERS, "Content-Type": "application/json" };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function toTimestamptz(v: unknown): string | null {
+  if (v == null || v === "") return null;
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return new Date(v).toISOString();
+  if (v instanceof Date) return v.toISOString();
+  return null;
+}
+
+async function ghlFetch(
+  pathOrUrl: string,
+  apiKey: string,
+  init: RequestInit = {},
+): Promise<any> {
+  const url = pathOrUrl.startsWith("http")
+    ? pathOrUrl
+    : `${GHL_BASE}${pathOrUrl}`;
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Version: GHL_VERSION,
+      Accept: "application/json",
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(init.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(
+      `GHL ${init.method || "GET"} ${url} → ${res.status}: ${body.slice(0, 500)}`,
+    );
+  }
+  return res.json();
+}
+
+async function syncContacts(
+  supabase: SupabaseClient,
+  apiKey: string,
+  locationId: string,
+  warnings: string[],
+): Promise<number> {
+  let nextUrl: string | null =
+    `${GHL_BASE}/contacts/?locationId=${encodeURIComponent(locationId)}&limit=100`;
+  let pages = 0;
+  let total = 0;
+
+  while (nextUrl && pages < MAX_PAGES) {
+    const data = await ghlFetch(nextUrl, apiKey);
+    const contacts: any[] = data.contacts || [];
+    if (contacts.length === 0) break;
+
+    const rows = contacts.map((c) => {
+      const fullName = [c.firstName, c.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      return {
+        ghl_contact_id: c.id,
+        ghl_location_id: c.locationId || locationId,
+        first_name: c.firstName || null,
+        last_name: c.lastName || null,
+        full_name: fullName || null,
+        email: c.email || null,
+        phone: c.phone || null,
+        source: c.source || null,
+        tags: Array.isArray(c.tags) ? c.tags : null,
+        date_added: toTimestamptz(c.dateAdded),
+        last_activity: toTimestamptz(c.lastActivity),
+        assigned_to: c.assignedTo || null,
+        custom_fields: c.customFields ?? null,
+        raw: c,
+        synced_at: new Date().toISOString(),
+      };
+    });
+
+    const { error } = await supabase
+      .from("contacts")
+      .upsert(rows, { onConflict: "ghl_contact_id" });
+    if (error) throw new Error(`contacts upsert failed: ${error.message}`);
+
+    total += rows.length;
+    pages++;
+
+    const meta = data.meta || {};
+    if (meta.nextPageUrl) {
+      nextUrl = meta.nextPageUrl;
+    } else if (meta.startAfterId && meta.startAfter != null) {
+      nextUrl =
+        `${GHL_BASE}/contacts/?locationId=${encodeURIComponent(locationId)}` +
+        `&limit=100&startAfterId=${encodeURIComponent(meta.startAfterId)}` +
+        `&startAfter=${encodeURIComponent(String(meta.startAfter))}`;
+    } else {
+      nextUrl = null;
+    }
+
+    if (nextUrl) await sleep(REQUEST_DELAY_MS);
+  }
+
+  if (pages >= MAX_PAGES && nextUrl) {
+    warnings.push(
+      `contacts: hit MAX_PAGES cap (${MAX_PAGES}) for ${locationId}`,
+    );
+  }
+  return total;
+}
+
+async function syncOpportunities(
+  supabase: SupabaseClient,
+  apiKey: string,
+  locationId: string,
+  warnings: string[],
+): Promise<number> {
+  let page = 1;
+  let total = 0;
+  const LIMIT = 100;
+
+  while (page <= MAX_PAGES) {
+    const data = await ghlFetch("/opportunities/search", apiKey, {
+      method: "POST",
+      body: JSON.stringify({ locationId, limit: LIMIT, page }),
+    });
+    const opps: any[] = data.opportunities || [];
+    if (opps.length === 0) break;
+
+    const rows = opps.map((o) => ({
+      ghl_opportunity_id: o.id,
+      ghl_location_id: o.locationId || locationId,
+      ghl_contact_id: o.contactId || o.contact?.id || null,
+      pipeline_id: o.pipelineId || null,
+      pipeline_stage_id: o.pipelineStageId || null,
+      name: o.name || null,
+      status: o.status || null,
+      monetary_value: o.monetaryValue != null ? Number(o.monetaryValue) : null,
+      assigned_to: o.assignedTo || null,
+      source: o.source || null,
+      created_at_ghl: toTimestamptz(o.createdAt),
+      updated_at_ghl: toTimestamptz(o.updatedAt),
+      raw: o,
+      synced_at: new Date().toISOString(),
+    }));
+
+    const { error } = await supabase
+      .from("opportunities")
+      .upsert(rows, { onConflict: "ghl_opportunity_id" });
+    if (error) throw new Error(`opportunities upsert failed: ${error.message}`);
+
+    total += rows.length;
+    if (opps.length < LIMIT) break;
+    page++;
+    await sleep(REQUEST_DELAY_MS);
+  }
+
+  if (page > MAX_PAGES) {
+    warnings.push(
+      `opportunities: hit MAX_PAGES cap (${MAX_PAGES}) for ${locationId}`,
+    );
+  }
+  return total;
+}
+
+async function syncAppointments(
+  supabase: SupabaseClient,
+  apiKey: string,
+  locationId: string,
+): Promise<number> {
+  const now = Date.now();
+  const startTime = new Date(
+    now - APPT_WINDOW_PAST_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const endTime = new Date(
+    now + APPT_WINDOW_FUTURE_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const data = await ghlFetch(
+    `/calendars/events?locationId=${encodeURIComponent(locationId)}` +
+      `&startTime=${encodeURIComponent(startTime)}` +
+      `&endTime=${encodeURIComponent(endTime)}`,
+    apiKey,
+  );
+  const events: any[] = data.events || [];
+  if (events.length === 0) return 0;
+
+  const rows = events.map((e) => ({
+    ghl_event_id: e.id,
+    ghl_location_id: e.locationId || locationId,
+    ghl_contact_id: e.contactId || null,
+    title: e.title || null,
+    start_time: toTimestamptz(e.startTime),
+    end_time: toTimestamptz(e.endTime),
+    status: e.appointmentStatus || e.status || null,
+    assigned_to: e.assignedUserId || e.assignedTo || null,
+    raw: e,
+    synced_at: new Date().toISOString(),
+  }));
+
+  const { error } = await supabase
+    .from("appointments")
+    .upsert(rows, { onConflict: "ghl_event_id" });
+  if (error) throw new Error(`appointments upsert failed: ${error.message}`);
+  return rows.length;
+}
+
+async function syncOneLocation(
+  supabase: SupabaseClient,
+  apiKey: string,
+  ghlLocationId: string,
+) {
+  const warnings: string[] = [];
+
+  const { data: logRow, error: logErr } = await supabase
+    .from("sync_log")
+    .insert({ status: "started", sync_type: "cache" })
+    .select("id")
+    .single();
+  if (logErr) console.error("sync_log insert failed:", logErr.message);
+  const logId: string | undefined = logRow?.id;
+
+  try {
+    const contacts = await syncContacts(
+      supabase,
+      apiKey,
+      ghlLocationId,
+      warnings,
+    );
+    await sleep(REQUEST_DELAY_MS);
+    const opportunities = await syncOpportunities(
+      supabase,
+      apiKey,
+      ghlLocationId,
+      warnings,
+    );
+    await sleep(REQUEST_DELAY_MS);
+    const appointments = await syncAppointments(
+      supabase,
+      apiKey,
+      ghlLocationId,
+    );
+
+    const counts = { contacts, opportunities, appointments };
+
+    if (logId) {
+      const patch: Record<string, unknown> = { status: "success" };
+      if (warnings.length) patch.error_message = warnings.join("; ");
+      const { error } = await supabase
+        .from("sync_log")
+        .update(patch)
+        .eq("id", logId);
+      if (error)
+        console.error("sync_log success update failed:", error.message);
+    }
+    return { ghl_location_id: ghlLocationId, ok: true, counts, warnings };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`sync failed for ${ghlLocationId}:`, msg);
+    if (logId) {
+      const { error } = await supabase
+        .from("sync_log")
+        .update({ status: "failed", error_message: msg })
+        .eq("id", logId);
+      if (error)
+        console.error("sync_log failure update failed:", error.message);
+    }
+    return { ghl_location_id: ghlLocationId, ok: false, error: msg };
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: CORS_HEADERS });
+  }
+  if (req.method !== "POST") {
+    return new Response(
+      JSON.stringify({ ok: false, error: "method not allowed" }),
+      { status: 405, headers: JSON_HEADERS },
+    );
+  }
+
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const GHL_API_KEY = Deno.env.get("GHL_API_KEY");
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !GHL_API_KEY) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error:
+          "missing env vars (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GHL_API_KEY)",
+      }),
+      { status: 500, headers: JSON_HEADERS },
+    );
+  }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  let body: any = {};
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
+
+  const requested =
+    typeof body?.ghl_location_id === "string"
+      ? body.ghl_location_id.trim()
+      : "";
+
+  let locationIds: string[];
+  if (requested) {
+    locationIds = [requested];
+  } else {
+    const { data: locs, error } = await supabase
+      .from("locations")
+      .select("ghl_location_id")
+      .eq("active", true);
+    if (error) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: `locations query failed: ${error.message}`,
+        }),
+        { status: 500, headers: JSON_HEADERS },
+      );
+    }
+    locationIds = (locs || [])
+      .map((r: { ghl_location_id: string | null }) => r.ghl_location_id)
+      .filter((x): x is string => typeof x === "string" && x.length > 0);
+  }
+
+  if (locationIds.length === 0) {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        results: [],
+        note: "no active locations to sync",
+      }),
+      { status: 200, headers: JSON_HEADERS },
+    );
+  }
+
+  const results = [];
+  for (const id of locationIds) {
+    const r = await syncOneLocation(supabase, GHL_API_KEY, id);
+    results.push(r);
+    await sleep(REQUEST_DELAY_MS);
+  }
+
+  const allOk = results.every((r) => r.ok);
+  return new Response(JSON.stringify({ ok: allOk, results }), {
+    status: allOk ? 200 : 500,
+    headers: JSON_HEADERS,
+  });
+});
