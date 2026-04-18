@@ -171,6 +171,48 @@
         Cancelled: "🚫",
       };
 
+      // ── Pending-call intent (sessionStorage) ──
+      const PENDING_CALL_KEY = "aira_pending_call";
+      const PENDING_CALL_MAX_AGE_MS = 30 * 60 * 1000;
+
+      function markPendingCall({ contactId, contactName, ghl_location_id }) {
+        try {
+          sessionStorage.setItem(
+            PENDING_CALL_KEY,
+            JSON.stringify({
+              contactId: String(contactId || ""),
+              contactName: String(contactName || "this contact"),
+              ghl_location_id: String(ghl_location_id || ""),
+              calledAt: Date.now(),
+            }),
+          );
+        } catch (e) {
+          console.warn("markPendingCall failed:", e);
+        }
+      }
+
+      function readPendingCall() {
+        try {
+          const raw = sessionStorage.getItem(PENDING_CALL_KEY);
+          if (!raw) return null;
+          const data = JSON.parse(raw);
+          if (!data || typeof data.calledAt !== "number") return null;
+          if (Date.now() - data.calledAt > PENDING_CALL_MAX_AGE_MS) {
+            sessionStorage.removeItem(PENDING_CALL_KEY);
+            return null;
+          }
+          return data;
+        } catch {
+          return null;
+        }
+      }
+
+      function clearPendingCall() {
+        try {
+          sessionStorage.removeItem(PENDING_CALL_KEY);
+        } catch {}
+      }
+
       // ── Seed Data (real Fox Lake GHL data) ──
       function getSeedData() {
         return {
@@ -703,7 +745,7 @@
           letterSpacing: "0.02em",
         };
         return href ? (
-          <a href={href} style={s}>
+          <a href={href} onClick={onClick} style={s}>
             <span style={{ fontSize: small ? 14 : 16 }}>{icon}</span>
             {label}
           </a>
@@ -849,7 +891,11 @@
           .join(" ");
       }
 
-      function DashboardScreen({ hideLeaderboard, selectedLocationId }) {
+      function DashboardScreen({
+        hideLeaderboard,
+        selectedLocationId,
+        callLogVersion,
+      }) {
         const [kpis, setKpis] = useState(null);
         const [leaderboard, setLeaderboard] = useState([]);
         const [loading, setLoading] = useState(true);
@@ -883,6 +929,10 @@
                     awaiting_update: 0,
                     sales: 0,
                     revenue: 0,
+                    calls_today: 0,
+                    calls_today_connected: 0,
+                    calls_today_no_answer: 0,
+                    calls_today_voicemail: 0,
                   },
             );
             setLeaderboard(lbRes.data || []);
@@ -892,7 +942,8 @@
           } finally {
             setLoading(false);
           }
-        }, [selectedLocationId]);
+          // eslint-disable-next-line
+        }, [selectedLocationId, callLogVersion]);
 
         useEffect(() => {
           load();
@@ -908,6 +959,10 @@
           awaiting_update: 0,
           sales: 0,
           revenue: 0,
+          calls_today: 0,
+          calls_today_connected: 0,
+          calls_today_no_answer: 0,
+          calls_today_voicemail: 0,
         };
         const leads = Number(k.leads) || 0;
         const bookedAppts = Number(k.booked_appts) || 0;
@@ -917,6 +972,10 @@
         const awaitingUpdate = Number(k.awaiting_update) || 0;
         const sales = Number(k.sales) || 0;
         const revenue = Number(k.revenue) || 0;
+        const callsToday = Number(k.calls_today) || 0;
+        const callsConnected = Number(k.calls_today_connected) || 0;
+        const callsNoAnswer = Number(k.calls_today_no_answer) || 0;
+        const callsVoicemail = Number(k.calls_today_voicemail) || 0;
         const showRate =
           bookedAppts > 0 ? Math.round((showed / bookedAppts) * 100) : 0;
         const closeRate = leads > 0 ? Math.round((sales / leads) * 100) : 0;
@@ -1108,10 +1167,16 @@
                 sub={loading ? null : `$${avgSale.toLocaleString()} avg`}
               />
               <KPI
-                label="Ad Spend"
-                value="—"
-                color={T.yellow}
-                sub="(syncing)"
+                label="Calls Today"
+                value={loading ? <SkelBar w={36} h={24} /> : callsToday}
+                color={T.accent}
+                sub={
+                  loading
+                    ? null
+                    : callsToday > 0
+                      ? `${callsConnected}c · ${callsNoAnswer}na · ${callsVoicemail}vm`
+                      : "no calls logged"
+                }
               />
               <KPI
                 label="Upcoming"
@@ -1407,7 +1472,7 @@
       }
 
       // ── Leads Screen ──
-      function LeadsScreen({ data, onSelect }) {
+      function LeadsScreen({ data, onSelect, selectedLocationId }) {
         const [filter, setFilter] = useState("All");
         const [search, setSearch] = useState("");
         const filters = [
@@ -1566,6 +1631,13 @@
                     href={`tel:${lead.phone}`}
                     color={T.accent}
                     small
+                    onClick={() =>
+                      markPendingCall({
+                        contactId: lead.id,
+                        contactName: `${lead.first} ${lead.last}`.trim(),
+                        ghl_location_id: selectedLocationId,
+                      })
+                    }
                   />
                   <ActionBtn
                     icon="💬"
@@ -1594,7 +1666,13 @@
       }
 
       // ── Lead Detail ──
-      function LeadDetail({ lead, onBack }) {
+      function LeadDetail({ lead, onBack, selectedLocationId }) {
+        const markCall = () =>
+          markPendingCall({
+            contactId: lead.id,
+            contactName: `${lead.first} ${lead.last}`.trim(),
+            ghl_location_id: selectedLocationId,
+          });
         const [newStatus, setNewStatus] = useState(lead.status);
         const statuses = [
           "New Lead",
@@ -1679,6 +1757,7 @@
                   <span>📱</span>
                   <a
                     href={`tel:${lead.phone}`}
+                    onClick={markCall}
                     style={{ color: T.accent, fontWeight: 600 }}
                   >
                     {lead.phone}
@@ -1737,6 +1816,7 @@
                   label="Call Now"
                   href={`tel:${lead.phone}`}
                   color={T.accent}
+                  onClick={markCall}
                 />
                 <ActionBtn
                   icon="💬"
@@ -1838,7 +1918,7 @@
       }
 
       // ── Conversations Screen ──
-      function ConversationsScreen({ data }) {
+      function ConversationsScreen({ data, selectedLocationId }) {
         const [selected, setSelected] = useState(null);
         const [reply, setReply] = useState("");
 
@@ -1888,6 +1968,13 @@
                   href={`tel:${selected.phone}`}
                   color={T.accent}
                   small
+                  onClick={() =>
+                    markPendingCall({
+                      contactId: selected.id,
+                      contactName: selected.name,
+                      ghl_location_id: selectedLocationId,
+                    })
+                  }
                 />
               </div>
               <div
@@ -2086,7 +2173,7 @@
       }
 
       // ── Appointments Screen ──
-      function AppointmentsScreen({ data }) {
+      function AppointmentsScreen({ data, selectedLocationId }) {
         const statusStyles = {
           confirmed: { bg: T.accentDim, color: T.accent, label: "Confirmed" },
           upcoming: { bg: T.blueDim, color: T.blue, label: "Upcoming" },
@@ -2211,6 +2298,13 @@
                       <div style={{ display: "flex", gap: 6 }}>
                         <a
                           href={`tel:${a.phone}`}
+                          onClick={() =>
+                            markPendingCall({
+                              contactId: a.id,
+                              contactName: a.name,
+                              ghl_location_id: selectedLocationId,
+                            })
+                          }
                           style={{
                             width: 38,
                             height: 38,
@@ -3728,6 +3822,190 @@
         );
       }
 
+      // ── Call Outcome Modal ──
+      function CallOutcomeModal({ profile, onLogged }) {
+        const [pending, setPending] = useState(() => readPendingCall());
+        const [note, setNote] = useState("");
+        const [submitting, setSubmitting] = useState(false);
+        const [error, setError] = useState(null);
+
+        useEffect(() => {
+          const refresh = () => setPending(readPendingCall());
+          refresh();
+          const onFocus = () => refresh();
+          const onVis = () => {
+            if (document.visibilityState === "visible") refresh();
+          };
+          window.addEventListener("focus", onFocus);
+          document.addEventListener("visibilitychange", onVis);
+          return () => {
+            window.removeEventListener("focus", onFocus);
+            document.removeEventListener("visibilitychange", onVis);
+          };
+        }, []);
+
+        if (!pending) return null;
+
+        const submit = async (outcome) => {
+          setSubmitting(true);
+          setError(null);
+          try {
+            const { error: err } = await window.supabase
+              .from("call_logs")
+              .insert({
+                ghl_location_id: pending.ghl_location_id,
+                ghl_contact_id: pending.contactId,
+                user_id: profile.id,
+                outcome,
+                notes: note.trim() ? note.trim() : null,
+                called_at: new Date(pending.calledAt).toISOString(),
+              });
+            if (err) throw err;
+            clearPendingCall();
+            setPending(null);
+            setNote("");
+            setSubmitting(false);
+            if (onLogged) onLogged();
+          } catch (e) {
+            console.error("call_logs insert failed:", e);
+            setError(e && e.message ? e.message : "Failed to log call");
+            setSubmitting(false);
+          }
+        };
+
+        const outcomes = [
+          {
+            key: "connected_booked",
+            icon: "📞",
+            label: "Connected — booked appointment",
+          },
+          {
+            key: "connected_not_booked",
+            icon: "💬",
+            label: "Connected — didn't book",
+          },
+          { key: "no_answer", icon: "📵", label: "No answer (no voicemail)" },
+          { key: "left_voicemail", icon: "🎙️", label: "Left voicemail" },
+          { key: "wrong_number", icon: "❌", label: "Wrong number" },
+          { key: "skipped", icon: "↩️", label: "Skip / didn't actually call" },
+        ];
+
+        return (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 300,
+              background: "rgba(0,0,0,0.75)",
+              backdropFilter: "blur(6px)",
+              WebkitBackdropFilter: "blur(6px)",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+              padding: "20px 16px",
+            }}
+          >
+            <div
+              className="fade-in"
+              style={{
+                width: "100%",
+                maxWidth: 448,
+                background: T.surface,
+                border: `1px solid ${T.border}`,
+                borderRadius: 18,
+                padding: 20,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                maxHeight: "90vh",
+                overflowY: "auto",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.dim,
+                }}
+              >
+                Log your call
+              </div>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  color: T.white,
+                  fontFamily: "'Outfit',sans-serif",
+                  lineHeight: 1.3,
+                  marginBottom: 4,
+                }}
+              >
+                How'd your call with {pending.contactName} go?
+              </div>
+              {outcomes.map((o) => (
+                <button
+                  key={o.key}
+                  onClick={() => submit(o.key)}
+                  disabled={submitting}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "14px 16px",
+                    borderRadius: 12,
+                    border: `1px solid ${T.border}`,
+                    background: T.card,
+                    color: T.text,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: submitting ? "not-allowed" : "pointer",
+                    textAlign: "left",
+                    fontFamily: "inherit",
+                    opacity: submitting ? 0.6 : 1,
+                  }}
+                >
+                  <span style={{ fontSize: 18 }}>{o.icon}</span>
+                  <span>{o.label}</span>
+                </button>
+              ))}
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Add a note (optional)"
+                disabled={submitting}
+                style={{
+                  marginTop: 4,
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${T.border}`,
+                  background: T.card,
+                  color: T.text,
+                  fontSize: 13,
+                  outline: "none",
+                }}
+              />
+              {error && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: T.redDim,
+                    border: `1px solid ${T.red}33`,
+                    color: T.red,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
       // ── Authenticated App ──
       function AuthenticatedApp({
         profile,
@@ -3756,6 +4034,13 @@
           localStorage.setItem("aira_view_mode", mode);
           setViewModeState(mode);
         }, []);
+
+        // Call-log version: incremented whenever a call is logged, drives refetch
+        const [callLogVersion, setCallLogVersion] = useState(0);
+        const bumpCallLogVersion = useCallback(
+          () => setCallLogVersion((v) => v + 1),
+          [],
+        );
 
         // Triage data (multi-location only)
         const [triageRows, setTriageRows] = useState([]);
@@ -3788,7 +4073,8 @@
           } finally {
             setTriageLoading(false);
           }
-        }, [accessibleLocations]);
+          // eslint-disable-next-line
+        }, [accessibleLocations, callLogVersion]);
 
         useEffect(() => {
           loadTriage();
@@ -3858,6 +4144,7 @@
               <LeadDetail
                 lead={selectedLead}
                 onBack={() => setSelectedLead(null)}
+                selectedLocationId={selectedLocationId}
               />
             );
           let dashboardEl;
@@ -3883,6 +4170,7 @@
               <DashboardScreen
                 hideLeaderboard={hideLeaderboard}
                 selectedLocationId={selectedLocationId}
+                callLogVersion={callLogVersion}
               />
             );
           }
@@ -3891,12 +4179,26 @@
               return dashboardEl;
             case "leads":
               return (
-                <LeadsScreen data={data} onSelect={(l) => setSelectedLead(l)} />
+                <LeadsScreen
+                  data={data}
+                  onSelect={(l) => setSelectedLead(l)}
+                  selectedLocationId={selectedLocationId}
+                />
               );
             case "conversations":
-              return <ConversationsScreen data={data} />;
+              return (
+                <ConversationsScreen
+                  data={data}
+                  selectedLocationId={selectedLocationId}
+                />
+              );
             case "appointments":
-              return <AppointmentsScreen data={data} />;
+              return (
+                <AppointmentsScreen
+                  data={data}
+                  selectedLocationId={selectedLocationId}
+                />
+              );
             default:
               return dashboardEl;
           }
@@ -4269,6 +4571,8 @@
                 onLogout={onLogout}
               />
             )}
+
+            <CallOutcomeModal profile={profile} onLogged={bumpCallLogVersion} />
           </div>
         );
       }
