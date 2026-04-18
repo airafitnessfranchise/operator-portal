@@ -239,17 +239,145 @@ async function syncAppointments(
   return rows.length;
 }
 
-async function syncOneLocation(
+function classifyStage(name: string): {
+  counts_as_show: boolean;
+  counts_as_no_show: boolean;
+  counts_as_sale: boolean;
+} {
+  const n = (name || "").toLowerCase();
+  const has = (terms: string[]) => terms.some((t) => n.includes(t));
+  // Order matters: "no show" must be checked before "show"-ish terms.
+  if (has(["sold", "won", "closed"])) {
+    return {
+      counts_as_show: true,
+      counts_as_no_show: false,
+      counts_as_sale: true,
+    };
+  }
+  if (has(["no show", "no-show"])) {
+    return {
+      counts_as_show: false,
+      counts_as_no_show: true,
+      counts_as_sale: false,
+    };
+  }
+  if (has(["booked", "confirmed", "showed", "appt", "pass"])) {
+    return {
+      counts_as_show: true,
+      counts_as_no_show: false,
+      counts_as_sale: false,
+    };
+  }
+  // "lost", "not interested", "dead", "new lead", "new" — all default false.
+  return {
+    counts_as_show: false,
+    counts_as_no_show: false,
+    counts_as_sale: false,
+  };
+}
+
+async function ensurePipeline(
   supabase: SupabaseClient,
   apiKey: string,
+  locationId: string,
+  existingPipelineId: string | null,
+  warnings: string[],
+): Promise<{ pipelineId: string | null; stagesDiscovered: number }> {
+  if (existingPipelineId) {
+    return { pipelineId: existingPipelineId, stagesDiscovered: 0 };
+  }
+
+  const data = await ghlFetch(
+    `/opportunities/pipelines?locationId=${encodeURIComponent(locationId)}`,
+    apiKey,
+  );
+  const pipelines: any[] = data.pipelines || [];
+  if (pipelines.length === 0) {
+    warnings.push(
+      `pipeline: no pipelines returned for ${locationId} — leaving pipeline_id null`,
+    );
+    return { pipelineId: null, stagesDiscovered: 0 };
+  }
+
+  const first = pipelines[0];
+  const pipelineId: string | null = first.id || null;
+  const stages: any[] = first.stages || [];
+
+  if (!pipelineId) {
+    warnings.push(
+      `pipeline: first pipeline returned for ${locationId} has no id — leaving pipeline_id null`,
+    );
+    return { pipelineId: null, stagesDiscovered: 0 };
+  }
+
+  if (stages.length > 0) {
+    const rows = stages.map((s, i) => {
+      const flags = classifyStage(s.name || "");
+      return {
+        ghl_location_id: locationId,
+        pipeline_id: pipelineId,
+        ghl_stage_id: s.id,
+        name: s.name || "Untitled",
+        position: typeof s.position === "number" ? s.position : i,
+        ...flags,
+        updated_at: new Date().toISOString(),
+      };
+    });
+    const { error } = await supabase
+      .from("pipeline_stages")
+      .upsert(rows, { onConflict: "ghl_stage_id" });
+    if (error) {
+      throw new Error(`pipeline_stages upsert failed: ${error.message}`);
+    }
+  }
+
+  const { error: updErr } = await supabase
+    .from("locations")
+    .update({ pipeline_id: pipelineId })
+    .eq("ghl_location_id", locationId);
+  if (updErr) {
+    warnings.push(
+      `pipeline: stages saved but failed to set locations.pipeline_id for ${locationId}: ${updErr.message}`,
+    );
+  }
+
+  return { pipelineId, stagesDiscovered: stages.length };
+}
+
+async function syncOneLocation(
+  supabase: SupabaseClient,
   ghlLocationId: string,
   ghlCalendarId: string | null,
+  ghlApiKey: string | null,
+  existingPipelineId: string | null,
 ) {
+  if (!ghlApiKey) {
+    await supabase.from("sync_log").insert({
+      status: "skipped",
+      sync_type: "cache",
+      ghl_location_id: ghlLocationId,
+      error_message: "Skipped: no ghl_api_key configured.",
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    });
+    return {
+      ghl_location_id: ghlLocationId,
+      ok: true,
+      skipped: true,
+      reason: "no ghl_api_key configured",
+    };
+  }
+
   const warnings: string[] = [];
 
   const { data: logRow, error: logErr } = await supabase
     .from("sync_log")
-    .insert({ status: "started", sync_type: "cache" })
+    .insert({
+      status: "started",
+      sync_type: "cache",
+      ghl_location_id: ghlLocationId,
+      started_at: new Date().toISOString(),
+    })
     .select("id")
     .single();
   if (logErr) console.error("sync_log insert failed:", logErr.message);
@@ -258,30 +386,48 @@ async function syncOneLocation(
   try {
     const contacts = await syncContacts(
       supabase,
-      apiKey,
+      ghlApiKey,
       ghlLocationId,
       warnings,
     );
     await sleep(REQUEST_DELAY_MS);
     const opportunities = await syncOpportunities(
       supabase,
-      apiKey,
+      ghlApiKey,
       ghlLocationId,
       warnings,
     );
     await sleep(REQUEST_DELAY_MS);
+    const { pipelineId: resolvedPipelineId, stagesDiscovered } =
+      await ensurePipeline(
+        supabase,
+        ghlApiKey,
+        ghlLocationId,
+        existingPipelineId,
+        warnings,
+      );
+    if (stagesDiscovered > 0) await sleep(REQUEST_DELAY_MS);
     const appointments = await syncAppointments(
       supabase,
-      apiKey,
+      ghlApiKey,
       ghlLocationId,
       ghlCalendarId,
       warnings,
     );
 
-    const counts = { contacts, opportunities, appointments };
+    const counts = {
+      contacts,
+      opportunities,
+      appointments,
+      stages_discovered: stagesDiscovered,
+    };
 
     if (logId) {
-      const patch: Record<string, unknown> = { status: "success" };
+      const patch: Record<string, unknown> = {
+        status: "success",
+        completed_at: new Date().toISOString(),
+        metadata: { counts, resolved_pipeline_id: resolvedPipelineId },
+      };
       if (warnings.length) patch.error_message = warnings.join("; ");
       const { error } = await supabase
         .from("sync_log")
@@ -290,14 +436,30 @@ async function syncOneLocation(
       if (error)
         console.error("sync_log success update failed:", error.message);
     }
-    return { ghl_location_id: ghlLocationId, ok: true, counts, warnings };
+
+    await supabase
+      .from("locations")
+      .update({ last_synced_at: new Date().toISOString() })
+      .eq("ghl_location_id", ghlLocationId);
+
+    return {
+      ghl_location_id: ghlLocationId,
+      ok: true,
+      counts,
+      pipeline_id: resolvedPipelineId,
+      warnings,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`sync failed for ${ghlLocationId}:`, msg);
     if (logId) {
       const { error } = await supabase
         .from("sync_log")
-        .update({ status: "failed", error_message: msg })
+        .update({
+          status: "failed",
+          error_message: msg,
+          completed_at: new Date().toISOString(),
+        })
         .eq("id", logId);
       if (error)
         console.error("sync_log failure update failed:", error.message);
@@ -319,14 +481,12 @@ Deno.serve(async (req) => {
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const GHL_API_KEY = Deno.env.get("GHL_API_KEY");
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !GHL_API_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(
       JSON.stringify({
         ok: false,
-        error:
-          "missing env vars (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GHL_API_KEY)",
+        error: "missing env vars (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)",
       }),
       { status: 500, headers: JSON_HEADERS },
     );
@@ -350,7 +510,7 @@ Deno.serve(async (req) => {
 
   let locQuery = supabase
     .from("locations")
-    .select("ghl_location_id, ghl_calendar_id")
+    .select("ghl_location_id, ghl_calendar_id, ghl_api_key, pipeline_id")
     .eq("active", true);
   if (requested) locQuery = locQuery.eq("ghl_location_id", requested);
 
@@ -365,18 +525,29 @@ Deno.serve(async (req) => {
     );
   }
 
+  type LocRow = {
+    ghl_location_id: string | null;
+    ghl_calendar_id: string | null;
+    ghl_api_key: string | null;
+    pipeline_id: string | null;
+  };
+
   const targets = (locs || [])
-    .map(
-      (r: {
-        ghl_location_id: string | null;
-        ghl_calendar_id: string | null;
-      }) => ({
-        ghl_location_id: r.ghl_location_id,
-        ghl_calendar_id: r.ghl_calendar_id,
-      }),
-    )
+    .map((r: LocRow) => ({
+      ghl_location_id: r.ghl_location_id,
+      ghl_calendar_id: r.ghl_calendar_id,
+      ghl_api_key: r.ghl_api_key,
+      pipeline_id: r.pipeline_id,
+    }))
     .filter(
-      (r): r is { ghl_location_id: string; ghl_calendar_id: string | null } =>
+      (
+        r,
+      ): r is {
+        ghl_location_id: string;
+        ghl_calendar_id: string | null;
+        ghl_api_key: string | null;
+        pipeline_id: string | null;
+      } =>
         typeof r.ghl_location_id === "string" && r.ghl_location_id.length > 0,
     );
 
@@ -397,9 +568,10 @@ Deno.serve(async (req) => {
   for (const t of targets) {
     const r = await syncOneLocation(
       supabase,
-      GHL_API_KEY,
       t.ghl_location_id,
       t.ghl_calendar_id,
+      t.ghl_api_key,
+      t.pipeline_id,
     );
     results.push(r);
     await sleep(REQUEST_DELAY_MS);
