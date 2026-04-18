@@ -196,25 +196,26 @@ async function syncAppointments(
   }
 
   const now = Date.now();
-  const startTime = new Date(
-    now - APPT_WINDOW_PAST_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  const endTime = new Date(
-    now + APPT_WINDOW_FUTURE_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
+  const startMs = now - APPT_WINDOW_PAST_DAYS * 24 * 60 * 60 * 1000;
+  const endMs = now + APPT_WINDOW_FUTURE_DAYS * 24 * 60 * 60 * 1000;
 
+  // GHL /calendars/events requires epoch-millis timestamps and rejects
+  // ISO 8601 silently (returns empty). Pin Version header to 2021-04-15
+  // for this call only — the newer 2021-07-28 also returns empty on this route.
   const data = await ghlFetch(
     `/calendars/events?locationId=${encodeURIComponent(locationId)}` +
       `&calendarId=${encodeURIComponent(calendarId)}` +
-      `&startTime=${encodeURIComponent(startTime)}` +
-      `&endTime=${encodeURIComponent(endTime)}`,
+      `&startTime=${startMs}` +
+      `&endTime=${endMs}`,
     apiKey,
+    { headers: { Version: "2021-04-15" } },
   );
-  const events: any[] = data.events || data.appointments || [];
+  const rawEvents: any[] = data.events || data.appointments || [];
+  const events = rawEvents.filter((e) => !e.deleted);
   if (events.length === 0) {
     const keys = Object.keys(data || {}).join(",") || "(none)";
     warnings.push(
-      `appointments: 0 events returned for ${locationId} (calendarId=${calendarId}, response keys: ${keys})`,
+      `appointments: 0 events returned for ${locationId} (calendarId=${calendarId}, response keys: ${keys}, raw_count: ${rawEvents.length})`,
     );
     return 0;
   }
@@ -227,6 +228,7 @@ async function syncAppointments(
     start_time: toTimestamptz(e.startTime),
     end_time: toTimestamptz(e.endTime),
     status: e.appointmentStatus || e.status || null,
+    appointment_status: e.appointmentStatus || null,
     assigned_to: e.assignedUserId || e.assignedTo || null,
     raw: e,
     synced_at: new Date().toISOString(),

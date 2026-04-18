@@ -873,7 +873,17 @@
             setKpis(
               kpisRes.data && kpisRes.data[0]
                 ? kpisRes.data[0]
-                : { leads: 0, shows: 0, no_shows: 0, sales: 0, revenue: 0 },
+                : {
+                    leads: 0,
+                    booked_appts: 0,
+                    showed: 0,
+                    no_showed: 0,
+                    cancelled: 0,
+                    upcoming: 0,
+                    awaiting_update: 0,
+                    sales: 0,
+                    revenue: 0,
+                  },
             );
             setLeaderboard(lbRes.data || []);
           } catch (e) {
@@ -890,28 +900,34 @@
 
         const k = kpis || {
           leads: 0,
-          shows: 0,
-          no_shows: 0,
+          booked_appts: 0,
+          showed: 0,
+          no_showed: 0,
+          cancelled: 0,
+          upcoming: 0,
+          awaiting_update: 0,
           sales: 0,
           revenue: 0,
         };
         const leads = Number(k.leads) || 0;
-        const shows = Number(k.shows) || 0;
-        const noShows = Number(k.no_shows) || 0;
+        const bookedAppts = Number(k.booked_appts) || 0;
+        const showed = Number(k.showed) || 0;
+        const noShowed = Number(k.no_showed) || 0;
+        const upcoming = Number(k.upcoming) || 0;
+        const awaitingUpdate = Number(k.awaiting_update) || 0;
         const sales = Number(k.sales) || 0;
         const revenue = Number(k.revenue) || 0;
         const showRate =
-          shows + noShows > 0
-            ? Math.round((shows / (shows + noShows)) * 100)
-            : 0;
+          bookedAppts > 0 ? Math.round((showed / bookedAppts) * 100) : 0;
         const closeRate = leads > 0 ? Math.round((sales / leads) * 100) : 0;
         const avgSale = sales > 0 ? Math.round(revenue / sales) : 0;
         const emptyCache =
           !loading &&
           !error &&
           leads === 0 &&
-          shows === 0 &&
-          noShows === 0 &&
+          bookedAppts === 0 &&
+          showed === 0 &&
+          noShowed === 0 &&
           sales === 0 &&
           revenue === 0;
         const monthLabel = new Date()
@@ -919,7 +935,7 @@
           .toUpperCase();
 
         const targets = [
-          { label: "Shows", cur: shows, tgt: 15, color: T.accent },
+          { label: "Booked Appts", cur: bookedAppts, tgt: 40, color: T.accent },
           { label: "Sales", cur: sales, tgt: 15, color: T.orange },
           {
             label: "Close Rate",
@@ -1037,58 +1053,102 @@
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
-                gap: 10,
-                marginBottom: 20,
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 8,
+                marginBottom: 10,
               }}
             >
               <KPI
                 label="Leads"
-                value={loading ? <SkelBar w={46} h={26} /> : leads}
-                icon="👥"
+                value={loading ? <SkelBar w={36} h={24} /> : leads}
                 color={T.blue}
               />
               <KPI
-                label="Shows"
-                value={loading ? <SkelBar w={46} h={26} /> : shows}
-                icon="✓"
+                label="Booked"
+                value={loading ? <SkelBar w={36} h={24} /> : bookedAppts}
+                color={T.accent}
+              />
+              <KPI
+                label="Showed"
+                value={loading ? <SkelBar w={36} h={24} /> : showed}
                 color={T.accent}
                 sub={loading ? null : `${showRate}% show rate`}
               />
               <KPI
-                label="No Shows"
-                value={loading ? <SkelBar w={46} h={26} /> : noShows}
-                icon="✗"
+                label="No Showed"
+                value={loading ? <SkelBar w={36} h={24} /> : noShowed}
                 color={T.red}
               />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 8,
+                marginBottom: 16,
+              }}
+            >
               <KPI
                 label="Sales"
-                value={loading ? <SkelBar w={46} h={26} /> : sales}
-                icon="🔥"
+                value={loading ? <SkelBar w={36} h={24} /> : sales}
                 color={T.orange}
-                sub={loading ? null : `${closeRate}% close rate`}
+                sub={loading ? null : `${closeRate}% close`}
               />
               <KPI
                 label="Revenue"
                 value={
                   loading ? (
-                    <SkelBar w={70} h={26} />
+                    <SkelBar w={60} h={24} />
                   ) : (
                     `$${revenue.toLocaleString()}`
                   )
                 }
-                icon="$"
                 color={T.accent}
-                sub={loading ? null : `$${avgSale.toLocaleString()} avg/sale`}
+                sub={loading ? null : `$${avgSale.toLocaleString()} avg`}
               />
               <KPI
                 label="Ad Spend"
                 value="—"
-                icon="📣"
                 color={T.yellow}
                 sub="(syncing)"
               />
+              <KPI
+                label="Upcoming"
+                value={loading ? <SkelBar w={36} h={24} /> : upcoming}
+                color={T.blue}
+                sub={loading ? null : "confirmed, future"}
+              />
             </div>
+
+            {!loading && awaitingUpdate > 0 && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  background: "rgba(245,158,11,0.10)",
+                  border: `1px solid ${TRIAGE_AMBER}55`,
+                  marginBottom: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <span style={{ fontSize: 14, color: TRIAGE_AMBER }}>⚠</span>
+                <div
+                  style={{
+                    color: TRIAGE_AMBER,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {awaitingUpdate} past appointment
+                  {awaitingUpdate === 1 ? "" : "s"} still marked Confirmed —
+                  update status in GHL
+                </div>
+              </div>
+            )}
 
             <div
               style={{
@@ -2845,11 +2905,29 @@
                 style={{
                   fontSize: 11,
                   color: T.dim,
-                  marginBottom: 12,
+                  marginBottom: 8,
                   fontStyle: "italic",
                 }}
               >
                 +{row.extra_credit_leads_count} organic conversations helping
+              </div>
+            )}
+            {Number(row.awaiting_update) > 5 && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: TRIAGE_AMBER,
+                  marginBottom: 12,
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <span>⚠</span>
+                <span>
+                  {row.awaiting_update} appointments need status update in GHL
+                </span>
               </div>
             )}
             <button
@@ -3261,18 +3339,24 @@
         const totals = rows.reduce(
           (acc, r) => ({
             leads: acc.leads + (Number(r.leads) || 0),
-            shows: acc.shows + (Number(r.shows) || 0),
-            no_shows: acc.no_shows + (Number(r.no_shows) || 0),
+            booked_appts: acc.booked_appts + (Number(r.booked_appts) || 0),
+            showed: acc.showed + (Number(r.showed) || 0),
+            no_showed: acc.no_showed + (Number(r.no_showed) || 0),
             sales: acc.sales + (Number(r.sales) || 0),
             revenue: acc.revenue + (Number(r.revenue) || 0),
           }),
-          { leads: 0, shows: 0, no_shows: 0, sales: 0, revenue: 0 },
+          {
+            leads: 0,
+            booked_appts: 0,
+            showed: 0,
+            no_showed: 0,
+            sales: 0,
+            revenue: 0,
+          },
         );
         const showRate =
-          totals.shows + totals.no_shows > 0
-            ? Math.round(
-                (totals.shows / (totals.shows + totals.no_shows)) * 100,
-              )
+          totals.booked_appts > 0
+            ? Math.round((totals.showed / totals.booked_appts) * 100)
             : 0;
         const closeRate =
           totals.leads > 0
@@ -3284,8 +3368,9 @@
           !loading &&
           !error &&
           totals.leads === 0 &&
-          totals.shows === 0 &&
-          totals.no_shows === 0 &&
+          totals.booked_appts === 0 &&
+          totals.showed === 0 &&
+          totals.no_showed === 0 &&
           totals.sales === 0 &&
           totals.revenue === 0;
         const monthLabel = new Date()
@@ -3395,56 +3480,78 @@
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
-                gap: 10,
-                marginBottom: 20,
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 8,
+                marginBottom: 10,
               }}
             >
               <KPI
                 label="Leads"
-                value={loading ? <SkelBar w={46} h={26} /> : totals.leads}
-                icon="👥"
+                value={loading ? <SkelBar w={36} h={24} /> : totals.leads}
                 color={T.blue}
               />
               <KPI
-                label="Shows"
-                value={loading ? <SkelBar w={46} h={26} /> : totals.shows}
-                icon="✓"
+                label="Booked"
+                value={
+                  loading ? <SkelBar w={36} h={24} /> : totals.booked_appts
+                }
+                color={T.accent}
+              />
+              <KPI
+                label="Showed"
+                value={loading ? <SkelBar w={36} h={24} /> : totals.showed}
                 color={T.accent}
                 sub={loading ? null : `${showRate}% show rate`}
               />
               <KPI
-                label="No Shows"
-                value={loading ? <SkelBar w={46} h={26} /> : totals.no_shows}
-                icon="✗"
+                label="No Showed"
+                value={loading ? <SkelBar w={36} h={24} /> : totals.no_showed}
                 color={T.red}
               />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 8,
+                marginBottom: 18,
+              }}
+            >
               <KPI
                 label="Sales"
-                value={loading ? <SkelBar w={46} h={26} /> : totals.sales}
-                icon="🔥"
+                value={loading ? <SkelBar w={36} h={24} /> : totals.sales}
                 color={T.orange}
-                sub={loading ? null : `${closeRate}% close rate`}
+                sub={loading ? null : `${closeRate}% close`}
               />
               <KPI
                 label="Revenue"
                 value={
                   loading ? (
-                    <SkelBar w={70} h={26} />
+                    <SkelBar w={60} h={24} />
                   ) : (
                     `$${totals.revenue.toLocaleString()}`
                   )
                 }
-                icon="$"
                 color={T.accent}
-                sub={loading ? null : `$${avgSale.toLocaleString()} avg/sale`}
+                sub={loading ? null : `$${avgSale.toLocaleString()} avg`}
               />
               <KPI
                 label="Ad Spend"
                 value="—"
-                icon="📣"
                 color={T.yellow}
                 sub="(syncing)"
+              />
+              <KPI
+                label="Locations"
+                value={
+                  loading ? (
+                    <SkelBar w={36} h={24} />
+                  ) : (
+                    accessibleLocations.length
+                  )
+                }
+                color={T.blue}
               />
             </div>
 
@@ -3515,10 +3622,12 @@
               {!loading &&
                 rows.map((r, i) => {
                   const rlds = Number(r.leads) || 0;
-                  const rshw = Number(r.shows) || 0;
+                  const rbkd = Number(r.booked_appts) || 0;
+                  const rshw = Number(r.showed) || 0;
                   const rs = Number(r.sales) || 0;
                   const rrv = Number(r.revenue) || 0;
                   const lcr = rlds > 0 ? Math.round((rs / rlds) * 100) : 0;
+                  const lsr = rbkd > 0 ? Math.round((rshw / rbkd) * 100) : 0;
                   const colors = [T.accent, T.orange, T.purple, T.blue];
                   const color = colors[i % colors.length];
                   const name = r.location_name || "—";
@@ -3588,12 +3697,17 @@
                       <div
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "repeat(5, 1fr)",
-                          gap: 6,
+                          gridTemplateColumns: "repeat(6, 1fr)",
+                          gap: 4,
                         }}
                       >
                         <LocStat label="Leads" value={rlds} color={T.blue} />
-                        <LocStat label="Shows" value={rshw} color={T.accent} />
+                        <LocStat label="Booked" value={rbkd} color={T.accent} />
+                        <LocStat
+                          label="Showed"
+                          value={rshw}
+                          color={lsr >= 40 ? T.accent : T.red}
+                        />
                         <LocStat label="Sales" value={rs} color={T.orange} />
                         <LocStat
                           label="Close"
