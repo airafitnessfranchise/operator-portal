@@ -5805,7 +5805,7 @@
                 <AdminPeopleTab profile={profile} onChanged={onRefresh} />
               )}
               {tab === "health" && (
-                <AdminPlaceholderTab label="Health (Phase 9C)" />
+                <AdminHealthTab profile={profile} onChanged={onRefresh} />
               )}
             </div>
           </div>
@@ -7592,6 +7592,604 @@
                       : "Add Person"}
                 </button>
               </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ── Admin Health Tab ──
+      function HealthStatCard({ label, value, sub, color = T.accent }) {
+        return (
+          <div
+            style={{
+              padding: "12px 14px",
+              background: T.card,
+              border: `1px solid ${T.border}`,
+              borderRadius: 12,
+              position: "relative",
+              overflow: "hidden",
+              minHeight: 70,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 2,
+                background: `linear-gradient(90deg,${color},transparent)`,
+              }}
+            />
+            <div
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: T.dim,
+              }}
+            >
+              {label}
+            </div>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 800,
+                color: T.white,
+                fontFamily: "'Outfit',sans-serif",
+                lineHeight: 1.1,
+              }}
+            >
+              {value}
+            </div>
+            {sub && (
+              <div style={{ fontSize: 10, color: T.dim, marginTop: 2 }}>
+                {sub}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      function relativeTime(iso) {
+        if (!iso) return "never";
+        const diff = Date.now() - new Date(iso).getTime();
+        if (diff < 0) return new Date(iso).toLocaleString();
+        const mins = Math.round(diff / 60000);
+        if (mins < 1) return "just now";
+        if (mins < 60) return `${mins}m ago`;
+        const hours = Math.round(mins / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.round(hours / 24);
+        return `${days}d ago`;
+      }
+
+      function AdminHealthTab({ profile, onChanged }) {
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState(null);
+        const [syncingAll, setSyncingAll] = useState(false);
+        const [syncReport, setSyncReport] = useState(null);
+        const [snapshot, setSnapshot] = useState(null);
+
+        const load = useCallback(async () => {
+          setLoading(true);
+          setError(null);
+          try {
+            const [
+              locsRes,
+              usersRes,
+              staffRes,
+              contactsCount,
+              oppsCount,
+              apptsCount,
+              stagesCount,
+              syncLogRes,
+              userLocsRes,
+            ] = await Promise.all([
+              window.supabase
+                .from("locations")
+                .select(
+                  "id, ghl_location_id, name, active, ghl_api_key, ghl_calendar_id, pipeline_id, last_synced_at",
+                ),
+              window.supabase
+                .from("users")
+                .select("id, role, ghl_user_id, active"),
+              window.supabase.from("ghl_staff").select("ghl_user_id"),
+              window.supabase
+                .from("contacts")
+                .select("*", { count: "exact", head: true }),
+              window.supabase
+                .from("opportunities")
+                .select("*", { count: "exact", head: true }),
+              window.supabase
+                .from("appointments")
+                .select("*", { count: "exact", head: true }),
+              window.supabase
+                .from("pipeline_stages")
+                .select("*", { count: "exact", head: true }),
+              window.supabase
+                .from("sync_log")
+                .select(
+                  "id, sync_type, status, ghl_location_id, started_at, completed_at, error_message, metadata",
+                )
+                .order("started_at", { ascending: false, nullsFirst: false })
+                .limit(20),
+              window.supabase
+                .from("user_locations")
+                .select("user_id, location_id, is_primary"),
+            ]);
+            if (locsRes.error) throw locsRes.error;
+            if (usersRes.error) throw usersRes.error;
+            if (staffRes.error) throw staffRes.error;
+            if (syncLogRes.error) throw syncLogRes.error;
+            if (userLocsRes.error) throw userLocsRes.error;
+
+            const locs = locsRes.data || [];
+            const users = usersRes.data || [];
+            const staff = staffRes.data || [];
+            const userLocs = userLocsRes.data || [];
+
+            // Data integrity checks
+            const warnings = [];
+            const staffIds = new Set(staff.map((s) => s.ghl_user_id));
+            users
+              .filter((u) => u.active && u.ghl_user_id)
+              .forEach((u) => {
+                if (!staffIds.has(u.ghl_user_id)) {
+                  warnings.push({
+                    severity: "error",
+                    text: `User ${u.id.slice(0, 8)} has ghl_user_id "${u.ghl_user_id}" not found in ghl_staff cache`,
+                  });
+                }
+              });
+            locs
+              .filter((l) => l.active)
+              .forEach((l) => {
+                if (!l.ghl_api_key) {
+                  warnings.push({
+                    severity: "error",
+                    text: `${l.name}: missing ghl_api_key — syncs will skip this location`,
+                  });
+                }
+                if (!l.ghl_calendar_id) {
+                  warnings.push({
+                    severity: "warning",
+                    text: `${l.name}: no ghl_calendar_id — appointments sync disabled`,
+                  });
+                }
+                if (!l.pipeline_id) {
+                  warnings.push({
+                    severity: "warning",
+                    text: `${l.name}: no pipeline_id — opportunity KPIs will be zero until first sync`,
+                  });
+                }
+              });
+            const userLocUserIds = new Set(userLocs.map((ul) => ul.user_id));
+            users
+              .filter((u) => u.active && u.role !== "admin")
+              .forEach((u) => {
+                if (!userLocUserIds.has(u.id)) {
+                  warnings.push({
+                    severity: "warning",
+                    text: `User ${u.id.slice(0, 8)} has no location assignments`,
+                  });
+                }
+              });
+
+            const roleCounts = users
+              .filter((u) => u.active)
+              .reduce((acc, u) => {
+                acc[u.role] = (acc[u.role] || 0) + 1;
+                return acc;
+              }, {});
+            const latestSync = locs
+              .map((l) => l.last_synced_at)
+              .filter(Boolean)
+              .sort()
+              .reverse()[0];
+
+            setSnapshot({
+              locations: {
+                active: locs.filter((l) => l.active).length,
+                total: locs.length,
+                rows: locs,
+              },
+              users: {
+                total: users.filter((u) => u.active).length,
+                by_role: roleCounts,
+              },
+              staff_cached: staff.length,
+              contacts: contactsCount.count || 0,
+              opportunities: oppsCount.count || 0,
+              appointments: apptsCount.count || 0,
+              stages: stagesCount.count || 0,
+              sync_log: syncLogRes.data || [],
+              warnings,
+              latestSync,
+            });
+          } catch (e) {
+            setError(e && e.message ? e.message : "Failed to load health");
+          } finally {
+            setLoading(false);
+          }
+        }, []);
+
+        useEffect(() => {
+          load();
+        }, [load]);
+
+        const syncAll = async () => {
+          setSyncingAll(true);
+          setSyncReport(null);
+          try {
+            const data = await callEdgeFunction("sync-ghl-to-cache", {});
+            setSyncReport(data);
+            await load();
+            if (onChanged) onChanged();
+          } catch (e) {
+            setSyncReport({
+              ok: false,
+              error: e && e.message ? e.message : "Sync failed",
+            });
+          } finally {
+            setSyncingAll(false);
+          }
+        };
+
+        if (loading) {
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <SkelBar w={"100%"} h={80} />
+              <SkelBar w={"100%"} h={80} />
+              <SkelBar w={"100%"} h={160} />
+            </div>
+          );
+        }
+        if (error) {
+          return (
+            <div
+              style={{
+                padding: "10px 12px",
+                borderRadius: 8,
+                background: T.redDim,
+                border: `1px solid ${T.red}33`,
+                color: T.red,
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              {error}
+            </div>
+          );
+        }
+        if (!snapshot) return null;
+
+        const byRoleText = Object.entries(snapshot.users.by_role)
+          .map(([r, n]) => `${n} ${ROLE_LABEL_BY_VALUE[r] || r}`)
+          .join(" · ");
+
+        const statusColorFor = (s) =>
+          s === "success"
+            ? TRIAGE_GREEN
+            : s === "failed"
+              ? T.red
+              : s === "skipped"
+                ? T.muted
+                : T.blue;
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 800,
+                  color: T.white,
+                  fontFamily: "'Outfit',sans-serif",
+                }}
+              >
+                Health
+              </div>
+              <button
+                onClick={syncAll}
+                disabled={syncingAll}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${T.accent}44`,
+                  background: T.accentDim,
+                  color: T.accent,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: syncingAll ? "wait" : "pointer",
+                  fontFamily: "inherit",
+                  opacity: syncingAll ? 0.6 : 1,
+                }}
+              >
+                {syncingAll ? "↻ Syncing all…" : "↻ Sync all locations"}
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 8,
+              }}
+            >
+              <HealthStatCard
+                label="Locations"
+                value={snapshot.locations.active}
+                sub={`of ${snapshot.locations.total} total`}
+                color={T.accent}
+              />
+              <HealthStatCard
+                label="Portal users"
+                value={snapshot.users.total}
+                sub={byRoleText || "none"}
+                color={T.blue}
+              />
+              <HealthStatCard
+                label="GHL staff"
+                value={snapshot.staff_cached}
+                sub="cached"
+                color={T.orange}
+              />
+              <HealthStatCard
+                label="Last sync"
+                value={relativeTime(snapshot.latestSync)}
+                sub={
+                  snapshot.latestSync
+                    ? new Date(snapshot.latestSync).toLocaleDateString()
+                    : "never"
+                }
+                color={T.accent}
+              />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 8,
+              }}
+            >
+              <HealthStatCard
+                label="Contacts"
+                value={snapshot.contacts.toLocaleString()}
+                sub="cached"
+                color={T.blue}
+              />
+              <HealthStatCard
+                label="Opportunities"
+                value={snapshot.opportunities.toLocaleString()}
+                sub="cached"
+                color={T.orange}
+              />
+              <HealthStatCard
+                label="Appointments"
+                value={snapshot.appointments.toLocaleString()}
+                sub="cached"
+                color={T.accent}
+              />
+              <HealthStatCard
+                label="Stages"
+                value={snapshot.stages.toLocaleString()}
+                sub="pipeline"
+                color={T.purple}
+              />
+            </div>
+
+            {syncReport && (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: syncReport.ok ? T.accentDim : T.redDim,
+                  border: `1px solid ${syncReport.ok ? T.accent : T.red}33`,
+                  color: syncReport.ok ? T.accent : T.red,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  lineHeight: 1.4,
+                }}
+              >
+                {syncReport.ok
+                  ? `Synced ${(syncReport.results || []).length} location(s). Refresh to see latest.`
+                  : `Sync failed: ${syncReport.error || "unknown"}`}
+              </div>
+            )}
+
+            {snapshot.warnings.length > 0 && (
+              <div
+                style={{
+                  padding: 14,
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 12,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    color: T.dim,
+                  }}
+                >
+                  ⚠ Data integrity ({snapshot.warnings.length})
+                </div>
+                {snapshot.warnings.map((w, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      fontSize: 12,
+                      lineHeight: 1.4,
+                      color: w.severity === "error" ? T.red : TRIAGE_AMBER,
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 6,
+                    }}
+                  >
+                    <span style={{ flexShrink: 0 }}>
+                      {w.severity === "error" ? "✗" : "⚠"}
+                    </span>
+                    <span>{w.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {snapshot.warnings.length === 0 && (
+              <div
+                style={{
+                  padding: 12,
+                  background: T.accentDim,
+                  border: `1px solid ${T.accent}33`,
+                  borderRadius: 10,
+                  color: T.accent,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  textAlign: "center",
+                }}
+              >
+                ✓ No data integrity issues detected.
+              </div>
+            )}
+
+            <div
+              style={{
+                background: T.card,
+                border: `1px solid ${T.border}`,
+                borderRadius: 12,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  padding: "12px 14px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.dim,
+                }}
+              >
+                Recent sync activity
+              </div>
+              {snapshot.sync_log.length === 0 && (
+                <div
+                  style={{
+                    padding: "12px 14px",
+                    borderTop: `1px solid ${T.border}`,
+                    color: T.muted,
+                    fontSize: 12,
+                  }}
+                >
+                  No sync attempts on record.
+                </div>
+              )}
+              {snapshot.sync_log.map((s) => {
+                const loc = snapshot.locations.rows.find(
+                  (l) => l.ghl_location_id === s.ghl_location_id,
+                );
+                const color = statusColorFor(s.status);
+                const counts = (s.metadata && s.metadata.counts) || null;
+                return (
+                  <div
+                    key={s.id}
+                    style={{
+                      padding: "10px 14px",
+                      borderTop: `1px solid ${T.border}`,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: T.white,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {loc?.name || s.ghl_location_id || "(unknown)"}
+                      </div>
+                      <span
+                        style={{
+                          padding: "2px 8px",
+                          borderRadius: 5,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          background: color + "22",
+                          color,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {s.status}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: T.dim,
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <span>{s.sync_type}</span>
+                      <span>{relativeTime(s.started_at)}</span>
+                      {counts && (
+                        <span>
+                          c{counts.contacts || 0} · o{counts.opportunities || 0}{" "}
+                          · a{counts.appointments || 0} · st{counts.staff || 0}
+                        </span>
+                      )}
+                    </div>
+                    {s.error_message && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: s.status === "success" ? TRIAGE_AMBER : T.red,
+                          lineHeight: 1.4,
+                          marginTop: 2,
+                        }}
+                      >
+                        {s.error_message.length > 220
+                          ? s.error_message.slice(0, 220) + "…"
+                          : s.error_message}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
