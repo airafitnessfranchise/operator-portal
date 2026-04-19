@@ -11,7 +11,7 @@
       name="apple-mobile-web-app-status-bar-style"
       content="black-translucent"
     />
-    <meta name="theme-color" content="#07080c" />
+    <meta name="theme-color" content="#F5F6F8" />
     <title>Aira Fitness — Operator Portal</title>
     <link rel="manifest" href="manifest.json" />
     <link rel="apple-touch-icon" href="icon-192.png" />
@@ -46,9 +46,9 @@
         height: 100%;
       }
       body {
-        background: #0a0c11;
+        background: #f5f6f8;
         font-family: "DM Sans", sans-serif;
-        color: #e5e7ef;
+        color: #1f2937;
         overflow-x: hidden;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
@@ -71,11 +71,11 @@
         background: transparent;
       }
       ::-webkit-scrollbar-thumb {
-        background: #30364a;
+        background: rgba(10, 14, 26, 0.14);
         border-radius: 6px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #3a4058;
+        background: rgba(10, 14, 26, 0.22);
       }
 
       @keyframes pulse {
@@ -122,9 +122,9 @@
       .skel {
         background: linear-gradient(
           90deg,
-          #171a22 0%,
-          #1f232e 50%,
-          #171a22 100%
+          #eceef2 0%,
+          #f5f6f8 50%,
+          #eceef2 100%
         );
         background-size: 200% 100%;
         animation: shimmer 1.5s ease-in-out infinite;
@@ -134,125 +134,100 @@
       @keyframes pulseGlow {
         0%,
         100% {
-          box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
+          box-shadow: 0 0 0 0 rgba(1, 156, 210, 0.35);
         }
         50% {
-          box-shadow: 0 0 0 12px rgba(16, 185, 129, 0);
+          box-shadow: 0 0 0 12px rgba(1, 156, 210, 0);
         }
       }
       .pulse-btn {
         animation: pulseGlow 1.8s ease-in-out infinite;
       }
 
-      /* Linear-style card surface — subtle top-to-bottom gradient,
-         inner top highlight, layered drop shadow. */
+      /* Aira card surface — white, hairline border, no shadow.
+         Light mode doesn't need shadow; the border does the lifting. */
       .surface-card {
-        background:
-          linear-gradient(
-            180deg,
-            rgba(255, 255, 255, 0.012) 0%,
-            rgba(0, 0, 0, 0) 100%
-          ),
-          #171a22;
-        border: 1px solid #252a3a;
+        background: #ffffff;
+        border: 0.5px solid rgba(10, 14, 26, 0.08);
         border-radius: 14px;
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.04),
-          0 1px 2px rgba(0, 0, 0, 0.35),
-          0 4px 14px rgba(0, 0, 0, 0.18);
+        transition:
+          border-color 160ms ease,
+          background 160ms ease;
       }
       .surface-card.interactive {
         cursor: pointer;
-        transition: all 160ms cubic-bezier(0.22, 0.61, 0.36, 1);
       }
       .surface-card.interactive:hover {
-        background:
-          linear-gradient(
-            180deg,
-            rgba(255, 255, 255, 0.02) 0%,
-            rgba(0, 0, 0, 0) 100%
-          ),
-          #1c202a;
-        border-color: #30364a;
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.06),
-          0 2px 4px rgba(0, 0, 0, 0.4),
-          0 8px 24px rgba(0, 0, 0, 0.22);
-        transform: translateY(-1px);
+        background: #f9fafb;
+        border-color: rgba(10, 14, 26, 0.14);
       }
 
-      /* Primary button — emerald gradient, inner highlight, soft shadow */
+      /* Primary — Aira Blue, ONE per screen */
       .btn-primary {
-        background: linear-gradient(
-          180deg,
-          #13c892 0%,
-          #10b981 55%,
-          #0d9d6e 100%
-        );
-        color: #0a0c11;
+        background: #019cd2;
+        color: #ffffff;
         border: none;
         border-radius: 10px;
-        padding: 12px 18px;
+        padding: 12px 20px;
         font-size: 14px;
-        font-weight: 700;
-        letter-spacing: -0.01em;
-        font-family: "Outfit", sans-serif;
+        font-weight: 500;
+        letter-spacing: -0.005em;
+        font-family: "DM Sans", sans-serif;
         cursor: pointer;
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.2),
-          0 1px 2px rgba(0, 0, 0, 0.2),
-          0 4px 12px rgba(16, 185, 129, 0.15);
-        transition: all 160ms cubic-bezier(0.22, 0.61, 0.36, 1);
+        transition:
+          background 160ms ease,
+          box-shadow 160ms ease;
       }
       .btn-primary:hover:not(:disabled) {
-        transform: translateY(-1px);
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.25),
-          0 2px 4px rgba(0, 0, 0, 0.25),
-          0 8px 18px rgba(16, 185, 129, 0.25);
+        background: #0178a3;
       }
       .btn-primary:active:not(:disabled) {
-        transform: translateY(0);
+        background: #0178a3;
       }
       .btn-primary:disabled {
-        background: #30364a;
-        color: #6b6f7f;
+        background: rgba(10, 14, 26, 0.06);
+        color: #9ca3af;
         cursor: not-allowed;
-        box-shadow: none;
       }
 
-      /* Secondary button — transparent with border, fills on hover */
+      /* Secondary — white card with hairline border */
       .btn-secondary {
-        background: transparent;
-        color: #e5e7ef;
-        border: 1px solid #30364a;
+        background: #ffffff;
+        color: #1f2937;
+        border: 0.5px solid rgba(10, 14, 26, 0.08);
         border-radius: 10px;
-        padding: 11px 16px;
-        font-size: 13px;
-        font-weight: 600;
+        padding: 11px 18px;
+        font-size: 14px;
+        font-weight: 500;
+        font-family: "DM Sans", sans-serif;
         cursor: pointer;
-        transition: all 160ms cubic-bezier(0.22, 0.61, 0.36, 1);
+        transition:
+          background 160ms ease,
+          border-color 160ms ease;
       }
       .btn-secondary:hover:not(:disabled) {
-        background: #1c202a;
-        border-color: #3a4058;
+        background: #f9fafb;
+        border-color: rgba(10, 14, 26, 0.14);
       }
 
-      /* Tertiary / ghost — text-only until hover */
+      /* Tertiary / ghost — transparent, muted until hover */
       .btn-ghost {
         background: transparent;
-        color: #9ca0b0;
+        color: #6b7280;
         border: none;
         padding: 8px 12px;
         font-size: 13px;
-        font-weight: 600;
+        font-weight: 500;
+        font-family: "DM Sans", sans-serif;
         cursor: pointer;
         border-radius: 8px;
-        transition: all 160ms cubic-bezier(0.22, 0.61, 0.36, 1);
+        transition:
+          background 160ms ease,
+          color 160ms ease;
       }
       .btn-ghost:hover:not(:disabled) {
-        background: rgba(255, 255, 255, 0.04);
-        color: #e5e7ef;
+        background: #f9fafb;
+        color: #1f2937;
       }
     </style>
   </head>
@@ -268,58 +243,71 @@
       // AIRA FITNESS — OPERATOR PORTAL v1
       // ══════════════════════════════════════════════
 
-      // Token system — Linear-inspired warm-neutral dark with restrained accent.
-      // Surface scale steps ~5% lightness; accent reserved for primary actions
-      // and genuinely-positive states only. WCAG AA for all text on bg.
+      // Token system — Aira brand light theme. White/warm-gray surfaces,
+      // black text, Aira Blue reserved for primary actions, active nav state,
+      // user avatars, and genuinely-positive indicators only. Everything else
+      // uses neutrals.
       const T = {
-        // Surface scale (deepest → most elevated)
-        bg: "#0a0c11",
-        surface: "#12141b",
-        card: "#171a22",
-        cardHover: "#1c202a",
-        cardElevated: "#1f232e",
+        // Aira brand
+        airaBlue: "#019CD2", // primary accent, extracted from logo
+        airaBlueDark: "#0178A3", // hover/pressed, gradients
+        airaBlueDim: "#E6F4FB", // 8% tint for bg/hover fills
+        airaBlueSubtle: "#F4FAFD", // whisper tint for row hovers
+
+        // Surfaces (warm-neutral light)
+        bg: "#F5F6F8",
+        surface: "#FFFFFF",
+        surfaceAlt: "#FAFBFC",
+        surfaceHover: "#F9FAFB",
 
         // Borders
-        border: "#252a3a",
-        borderLight: "#30364a",
+        border: "rgba(10, 14, 26, 0.08)",
+        borderStrong: "rgba(10, 14, 26, 0.14)",
+        borderLight: "rgba(10, 14, 26, 0.04)",
 
-        // Accent (emerald — primary actions + positive status only)
-        accent: "#10b981",
-        accentDark: "#0d9d6e",
-        accentDim: "rgba(16,185,129,0.10)",
-        accentHover: "rgba(16,185,129,0.16)",
-        accentBorder: "rgba(16,185,129,0.28)",
-        accentGlow: "rgba(16,185,129,0.35)",
+        // Text hierarchy
+        textHi: "#0A0E1A", // hero numbers, primary titles
+        text: "#1F2937", // body
+        textMuted: "#6B7280", // secondary
+        textDim: "#9CA3AF", // labels, metadata
 
-        // Status (used sparingly)
-        red: "#ef4444",
-        redDim: "rgba(239,68,68,0.10)",
-        amber: "#f59e0b",
-        amberDim: "rgba(245,158,11,0.10)",
-        blue: "#6b8aff",
-        blueDim: "rgba(107,138,255,0.10)",
-        purple: "#a78bfa",
-        purpleDim: "rgba(167,139,250,0.10)",
+        // Semantic status
+        green: "#10B981",
+        greenBg: "#ECFDF5",
+        amber: "#F59E0B",
+        amberBg: "#FFFBEB",
+        red: "#E24B4A",
+        redBg: "#FEF2F2",
 
-        // Typography (4 steps)
-        textHi: "#ffffff",
-        text: "#e5e7ef",
-        textMuted: "#9ca0b0",
-        textDim: "#6b6f7f",
+        // Legacy aliases — keep un-upgraded screens coherent in light mode
+        // until each gets its own design pass.
+        accent: "#019CD2", // → airaBlue
+        accentDark: "#0178A3", // → airaBlueDark
+        accentDim: "#E6F4FB", // → airaBlueDim
+        accentHover: "#E6F4FB",
+        accentBorder: "rgba(1,156,210,0.28)",
+        accentGlow: "rgba(1,156,210,0.20)",
+        card: "#FFFFFF", // → surface
+        cardHover: "#F9FAFB", // → surfaceHover
+        cardElevated: "#FAFBFC", // → surfaceAlt
+        white: "#0A0E1A", // was white-on-dark — now textHi
+        dim: "#6B7280", // → textMuted
+        muted: "#9CA3AF", // → textDim
+        orange: "#F59E0B", // → amber
+        orangeDim: "#FFFBEB",
+        yellow: "#F59E0B",
+        yellowDim: "#FFFBEB",
+        redDim: "#FEF2F2",
+        amberDim: "#FFFBEB",
+        blue: "#019CD2", // collapse to airaBlue
+        blueDim: "#E6F4FB",
+        purple: "#8B5CF6",
+        purpleDim: "#F5F3FF",
 
-        // Elevation
-        shadow1: "0 1px 2px rgba(0,0,0,0.35), 0 4px 14px rgba(0,0,0,0.18)",
-        shadow2: "0 2px 4px rgba(0,0,0,0.40), 0 8px 24px rgba(0,0,0,0.24)",
-
-        // Legacy aliases — retained so un-upgraded screens stay coherent
-        // until their own design pass lands.
-        white: "#ffffff", // → textHi
-        dim: "#9ca0b0", // → textMuted
-        muted: "#6b6f7f", // → textDim
-        orange: "#f59e0b", // → amber
-        orangeDim: "rgba(245,158,11,0.10)",
-        yellow: "#f59e0b",
-        yellowDim: "rgba(245,158,11,0.10)",
+        // Elevation — light mode uses almost no shadow
+        shadow1: "0 1px 2px rgba(10,14,26,0.04), 0 1px 3px rgba(10,14,26,0.03)",
+        shadow2:
+          "0 2px 6px rgba(10,14,26,0.06), 0 4px 10px rgba(10,14,26,0.04)",
       };
 
       const STATUS_ICONS = {
@@ -920,18 +908,25 @@
         );
       }
 
-      // KPI card — the workhorse of the dashboard. Linear-style surface with
-      // inner top highlight + subtle gradient + drop shadow. No colored top bar
-      // (the old decorative stripe was visual noise). `color` prop is retained
-      // for the optional status dot next to the label — if passed and different
-      // from T.accent the dot signals status.
-      function KPI({ label, value, sub, color = T.accent, icon }) {
-        const hasStatus = color && color !== T.accent;
+      // KPI card — Aira light-mode. White surface, hairline border, no shadow.
+      // Hero number is always textHi (no decorative color). An optional `status`
+      // prop ("good" | "warn" | "bad") renders a tiny colored dot next to the
+      // label for genuinely-signaling cases only. The legacy `color` prop is
+      // accepted for backwards compatibility — if it matches a semantic color
+      // it's translated to a status dot; otherwise it's ignored.
+      function KPI({ label, value, sub, status, color, icon }) {
+        let dotColor = null;
+        if (status === "good") dotColor = T.green;
+        else if (status === "warn") dotColor = T.amber;
+        else if (status === "bad") dotColor = T.red;
+        else if (color === T.red || color === T.amber || color === T.green) {
+          dotColor = color;
+        }
         return (
           <div
             className="surface-card"
             style={{
-              padding: "16px 14px 14px",
+              padding: "16px 14px",
               display: "flex",
               flexDirection: "column",
               gap: 10,
@@ -941,28 +936,27 @@
             <div
               style={{
                 fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: "0.09em",
+                fontWeight: 500,
+                letterSpacing: "0.1em",
                 textTransform: "uppercase",
-                color: T.textDim,
+                color: T.textMuted,
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
               }}
             >
-              {hasStatus && (
+              {dotColor && (
                 <span
                   style={{
                     width: 6,
                     height: 6,
                     borderRadius: "50%",
-                    background: color,
-                    boxShadow: `0 0 0 3px ${color}22`,
+                    background: dotColor,
                     flexShrink: 0,
                   }}
                 />
               )}
-              {icon && !hasStatus && (
+              {icon && !dotColor && (
                 <span style={{ fontSize: 12, opacity: 0.7 }}>{icon}</span>
               )}
               <span
@@ -978,7 +972,7 @@
             <div
               style={{
                 fontSize: 30,
-                fontWeight: 700,
+                fontWeight: 500,
                 color: T.textHi,
                 lineHeight: 1,
                 fontFamily: "'Outfit',sans-serif",
@@ -993,7 +987,7 @@
             {sub && (
               <div
                 style={{
-                  fontSize: 11,
+                  fontSize: 12,
                   color: T.textMuted,
                   lineHeight: 1.3,
                   overflow: "hidden",
@@ -1211,8 +1205,8 @@
               <div
                 style={{
                   fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: "0.14em",
+                  fontWeight: 500,
+                  letterSpacing: "0.12em",
                   textTransform: "uppercase",
                   color: T.textMuted,
                 }}
@@ -1221,11 +1215,11 @@
               </div>
               <div
                 style={{
-                  fontSize: 28,
-                  fontWeight: 600,
+                  fontSize: 22,
+                  fontWeight: 500,
                   color: T.textHi,
                   fontFamily: "'Outfit',sans-serif",
-                  letterSpacing: "-0.02em",
+                  letterSpacing: "-0.01em",
                   marginTop: 4,
                 }}
               >
@@ -1243,17 +1237,16 @@
                   justifyContent: "space-between",
                   alignItems: "center",
                   gap: 12,
-                  borderColor: "rgba(239,68,68,0.22)",
+                  borderLeft: `3px solid ${T.red}`,
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span
                     style={{
-                      width: 8,
-                      height: 8,
+                      width: 6,
+                      height: 6,
                       borderRadius: "50%",
                       background: T.red,
-                      boxShadow: `0 0 0 3px ${T.redDim}`,
                       flexShrink: 0,
                     }}
                   />
@@ -1277,17 +1270,15 @@
                   justifyContent: "space-between",
                   alignItems: "center",
                   gap: 12,
-                  borderColor: "rgba(107,138,255,0.22)",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span
                     style={{
-                      width: 8,
-                      height: 8,
+                      width: 6,
+                      height: 6,
                       borderRadius: "50%",
-                      background: T.blue,
-                      boxShadow: `0 0 0 3px ${T.blueDim}`,
+                      background: T.airaBlue,
                       flexShrink: 0,
                     }}
                   />
@@ -1312,23 +1303,19 @@
               <KPI
                 label="Leads"
                 value={loading ? <SkelBar w={36} h={24} /> : leads}
-                color={T.blue}
               />
               <KPI
                 label="Booked"
                 value={loading ? <SkelBar w={36} h={24} /> : bookedAppts}
-                color={T.accent}
               />
               <KPI
                 label="Showed"
                 value={loading ? <SkelBar w={36} h={24} /> : showed}
-                color={T.accent}
                 sub={loading ? null : `${showRate}% show rate`}
               />
               <KPI
                 label="No Showed"
                 value={loading ? <SkelBar w={36} h={24} /> : noShowed}
-                color={T.red}
               />
             </div>
 
@@ -1343,7 +1330,6 @@
               <KPI
                 label="Sales"
                 value={loading ? <SkelBar w={36} h={24} /> : sales}
-                color={T.amber}
                 sub={loading ? null : `${closeRate}% close`}
               />
               <KPI
@@ -1355,13 +1341,11 @@
                     `$${revenue.toLocaleString()}`
                   )
                 }
-                color={T.accent}
                 sub={loading ? null : `$${avgSale.toLocaleString()} avg`}
               />
               <KPI
                 label="Calls Today"
                 value={loading ? <SkelBar w={36} h={24} /> : callsToday}
-                color={T.accent}
                 sub={
                   loading
                     ? null
@@ -1373,7 +1357,6 @@
               <KPI
                 label="Upcoming"
                 value={loading ? <SkelBar w={36} h={24} /> : upcoming}
-                color={T.blue}
                 sub={loading ? null : "confirmed, future"}
               />
             </div>
@@ -1387,16 +1370,15 @@
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
-                  borderColor: "rgba(245,158,11,0.24)",
+                  borderLeft: `3px solid ${T.amber}`,
                 }}
               >
                 <span
                   style={{
-                    width: 8,
-                    height: 8,
+                    width: 6,
+                    height: 6,
                     borderRadius: "50%",
                     background: T.amber,
-                    boxShadow: `0 0 0 3px ${T.amberDim}`,
                     flexShrink: 0,
                   }}
                 />
@@ -1418,15 +1400,15 @@
             <div
               className="surface-card"
               style={{
-                padding: 24,
+                padding: 20,
                 marginBottom: 20,
               }}
             >
               <div
                 style={{
                   fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: "0.14em",
+                  fontWeight: 500,
+                  letterSpacing: "0.12em",
                   textTransform: "uppercase",
                   color: T.textMuted,
                   marginBottom: 18,
@@ -1440,7 +1422,7 @@
                 return (
                   <div
                     key={i}
-                    style={{ marginBottom: i < targets.length - 1 ? 16 : 0 }}
+                    style={{ marginBottom: i < targets.length - 1 ? 18 : 0 }}
                   >
                     <div
                       style={{
@@ -1465,14 +1447,14 @@
                         >
                           <span
                             style={{
-                              color: ok ? T.textHi : T.red,
-                              fontWeight: 600,
+                              color: T.textHi,
+                              fontWeight: 500,
                             }}
                           >
                             {t.money ? `$${t.cur.toLocaleString()}` : t.cur}
                             {t.suf || ""}
                           </span>
-                          <span style={{ color: T.textDim, fontWeight: 500 }}>
+                          <span style={{ color: T.textMuted, fontWeight: 400 }}>
                             {" "}
                             / {t.money ? `$${t.tgt.toLocaleString()}` : t.tgt}
                             {t.suf || ""}
@@ -1483,7 +1465,7 @@
                     <div
                       style={{
                         height: 4,
-                        background: T.border,
+                        background: "rgba(10,14,26,0.06)",
                         borderRadius: 2,
                         overflow: "hidden",
                       }}
@@ -1493,7 +1475,7 @@
                           width: loading ? "0%" : `${pct}%`,
                           height: "100%",
                           borderRadius: 2,
-                          background: ok ? t.color : T.red,
+                          background: ok ? T.airaBlue : T.red,
                           transition:
                             "width 0.8s cubic-bezier(0.22, 0.61, 0.36, 1)",
                         }}
@@ -1510,8 +1492,8 @@
                   style={{
                     padding: "20px 24px 14px",
                     fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: "0.14em",
+                    fontWeight: 500,
+                    letterSpacing: "0.12em",
                     textTransform: "uppercase",
                     color: T.textMuted,
                   }}
@@ -1526,7 +1508,7 @@
                         display: "flex",
                         alignItems: "center",
                         padding: "14px 24px",
-                        borderTop: `1px solid ${T.border}`,
+                        borderTop: `0.5px solid ${T.border}`,
                         gap: 14,
                       }}
                     >
@@ -1551,7 +1533,7 @@
                   <div
                     style={{
                       padding: "22px 24px",
-                      borderTop: `1px solid ${T.border}`,
+                      borderTop: `0.5px solid ${T.border}`,
                       textAlign: "center",
                       color: T.textMuted,
                       fontSize: 13,
@@ -1565,8 +1547,6 @@
                     const rsales = Number(r.sales) || 0;
                     const rrev = Number(r.revenue) || 0;
                     const cr = Math.round(Number(r.close_rate) || 0);
-                    const colors = [T.accent, T.amber, T.purple, T.blue];
-                    const color = colors[i % colors.length];
                     const display = r.full_name || "Unknown";
                     const initial = (display[0] || "?").toUpperCase();
                     const crOk = cr >= 40;
@@ -1577,7 +1557,7 @@
                           display: "flex",
                           alignItems: "center",
                           padding: "14px 24px",
-                          borderTop: `1px solid ${T.border}`,
+                          borderTop: `0.5px solid ${T.border}`,
                           gap: 14,
                         }}
                       >
@@ -1586,14 +1566,13 @@
                             width: 36,
                             height: 36,
                             borderRadius: "50%",
-                            background: `${color}1a`,
-                            border: `1px solid ${color}33`,
+                            background: T.airaBlueDim,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
                             fontSize: 14,
-                            fontWeight: 600,
-                            color,
+                            fontWeight: 500,
+                            color: T.airaBlue,
                             fontFamily: "'Outfit',sans-serif",
                             flexShrink: 0,
                           }}
@@ -1617,7 +1596,7 @@
                           <div
                             style={{
                               fontSize: 11,
-                              color: T.textDim,
+                              color: T.textMuted,
                               marginTop: 2,
                             }}
                           >
@@ -1628,7 +1607,7 @@
                           <div
                             style={{
                               fontSize: 16,
-                              fontWeight: 600,
+                              fontWeight: 500,
                               color: T.textHi,
                               fontFamily: "'Outfit',sans-serif",
                               letterSpacing: "-0.01em",
@@ -1647,38 +1626,46 @@
                             SALES
                           </div>
                         </div>
-                        <div style={{ textAlign: "center", minWidth: 44 }}>
-                          <span
+                        <div style={{ textAlign: "center", minWidth: 48 }}>
+                          <div
                             style={{
-                              padding: "3px 8px",
-                              borderRadius: 6,
-                              fontSize: 11,
-                              fontWeight: 600,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
                               fontFamily: "'Outfit',sans-serif",
-                              background: crOk ? T.accentDim : T.redDim,
-                              color: crOk ? T.accent : T.red,
-                              border: `1px solid ${crOk ? T.accentBorder : "rgba(239,68,68,0.22)"}`,
+                              fontSize: 14,
+                              fontWeight: 500,
+                              color: T.textHi,
+                              letterSpacing: "-0.01em",
                             }}
                           >
+                            <span
+                              style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: "50%",
+                                background: crOk ? T.green : T.red,
+                              }}
+                            />
                             {cr}%
-                          </span>
+                          </div>
                           <div
                             style={{
                               fontSize: 9,
                               color: T.textDim,
                               letterSpacing: "0.1em",
-                              marginTop: 4,
+                              marginTop: 2,
                             }}
                           >
                             CLOSE
                           </div>
                         </div>
-                        <div style={{ textAlign: "center", minWidth: 52 }}>
+                        <div style={{ textAlign: "center", minWidth: 56 }}>
                           <div
                             style={{
                               fontSize: 14,
-                              fontWeight: 600,
-                              color: T.accent,
+                              fontWeight: 500,
+                              color: T.textHi,
                               fontFamily: "'Outfit',sans-serif",
                               letterSpacing: "-0.01em",
                             }}
