@@ -47,6 +47,7 @@ Three compounding problems we're solving:
 **Problem 3 — Franchisees drift from the Aira system.** The 5-Day Training teaches a specific playbook (Rule of 3, Deaf Ear, $220 ADPS, 40 memberships/mo). Without real-time visibility, it's too easy for a franchisee to silently stop running the system and waive fees, skip evening calls, or let leads go cold.
 
 **The Portal Solves All Three By:**
+
 - Giving operators a simple, focused app that only shows what matters
 - Giving VPs a territory-wide triage view that ranks franchisees by who needs help most
 - Measuring real Aira benchmarks (30-60% lead-to-sale, Rule of 3 diagnosis) and surfacing gaps in dollars
@@ -58,6 +59,7 @@ Three compounding problems we're solving:
 The portal is Phase 1 of a bigger goal: **Aira owns its technology stack.** Every location runs on Aira infrastructure, not third-party SaaS. This is a strategic differentiator for franchise sales and a moat against competitors like Planet Fitness or Orangetheory.
 
 **Strategic direction chosen April 18, 2026:**
+
 > "Give VPs and Alyssa a weapon so franchisees actually hit their numbers."
 
 We're building a **management tool**, not just a dashboard. The portal's job is to demand action, not display data.
@@ -70,21 +72,72 @@ As of April 18, 2026, the following is live and working:
 
 ### Phase 1-5: Core Portal ✅ SHIPPED
 
-| Feature | Status | Notes |
-|---|---|---|
-| PWA shell (HTML, React CDN, Babel) | ✅ Live | No build step. Single `index.html`. |
-| Mobile-first design (Aira branded) | ✅ Live | Dark theme, DM Sans + Outfit fonts |
-| Supabase authentication (email+password) | ✅ Live | No magic links — Mike's decision |
-| Role-based access (admin, vp, rd, franchisee, manager, sales_rep) | ✅ Live | RLS enforced at DB level |
-| Multi-location user access | ✅ Live | `user_locations` join table |
-| Single-location dashboard with real KPIs | ✅ Live | Pulled from Supabase cache |
-| Territory Dashboard (multi-location summary) | ✅ Live | Default view for VP/admin users |
-| Back-to-territory navigation | ✅ Live | Chip below header in location view |
-| Per-location API credentials | ✅ Live | Each location has own PIT stored in DB |
-| Auto-discovery of pipelines + stage flags | ✅ Live | Via heuristic on stage names |
-| GHL-to-Supabase sync (Edge Function) | ✅ Live | On-demand; caches contacts, opps, appts |
-| GitHub Pages deployment | ✅ Live | Auto-deploys on push to `main` |
-| Settings drawer with logout | ✅ Live | Leaderboard hidden for sales_rep role |
+| Feature                                                           | Status  | Notes                                   |
+| ----------------------------------------------------------------- | ------- | --------------------------------------- |
+| PWA shell (HTML, React CDN, Babel)                                | ✅ Live | No build step. Single `index.html`.     |
+| Mobile-first design (Aira branded)                                | ✅ Live | Dark theme, DM Sans + Outfit fonts      |
+| Supabase authentication (email+password)                          | ✅ Live | No magic links — Mike's decision        |
+| Role-based access (admin, vp, rd, franchisee, manager, sales_rep) | ✅ Live | RLS enforced at DB level                |
+| Multi-location user access                                        | ✅ Live | `user_locations` join table             |
+| Single-location dashboard with real KPIs                          | ✅ Live | Pulled from Supabase cache              |
+| Territory Dashboard (multi-location summary)                      | ✅ Live | Default view for VP/admin users         |
+| Back-to-territory navigation                                      | ✅ Live | Chip below header in location view      |
+| Per-location API credentials                                      | ✅ Live | Each location has own PIT stored in DB  |
+| Auto-discovery of pipelines + stage flags                         | ✅ Live | Via heuristic on stage names            |
+| GHL-to-Supabase sync (Edge Function)                              | ✅ Live | On-demand; caches contacts, opps, appts |
+| GitHub Pages deployment                                           | ✅ Live | Auto-deploys on push to `main`          |
+| Settings drawer with logout                                       | ✅ Live | Leaderboard hidden for sales_rep role   |
+
+### Phase 6: Multi-Location Scaling + VP Territory Dashboard ✅ SHIPPED
+
+| Feature                                             | Status  | Notes                                                                                                      |
+| --------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| Per-location PIT credentials                        | ✅ Live | Each gym's own `ghl_api_key` stored in `public.locations`                                                  |
+| Auto-discovery of pipelines + stages                | ✅ Live | Heuristic classifier (sold/won/closed → sale, no show → no_show, booked/confirmed/showed/appt/pass → show) |
+| Territory Dashboard for multi-location users        | ✅ Live | Aggregate KPIs across all accessible locations + per-location cards                                        |
+| Back-to-territory navigation                        | ✅ Live | Chip in header when drilled into a single location                                                         |
+| Skip-with-warning for locations missing credentials | ✅ Live | Sync logs a `sync_log` warning and moves on                                                                |
+
+### Phase 7: VP Triage View ✅ SHIPPED
+
+| Feature                                                  | Status  | Notes                                                                   |
+| -------------------------------------------------------- | ------- | ----------------------------------------------------------------------- |
+| `location_triage` RPC with Rule-of-3 diagnosis           | ✅ Live | Returns `status_color` + `primary_diagnosis` per location               |
+| Triage-mode default when any location is red             | ✅ Live | Persisted via `aira_view_mode` localStorage key                         |
+| Floor-gap dollar math ($419/sale assumption)             | ✅ Live | = (floor_target − actual) × 419                                         |
+| Ad-lead vs Extra-Credit source classification            | ✅ Live | Only ad leads count toward the 30/60 floor math                         |
+| Rule-of-3 priority ladder                                | ✅ Live | Calls → Appointments → Shows → Closing → ADPS; first broken step wins   |
+| Appointment-status-driven metrics (GHL real statuses)    | ✅ Live | `confirmed` / `showed` / `noshow` / `cancelled` from GHL                |
+| Awaiting-update signal (confirmed appts past start_time) | ✅ Live | Amber subtext when > 5 per location                                     |
+| Call logging with "How'd it go?" modal                   | ✅ Live | Tap-to-call marks pending intent; modal prompts on return to portal     |
+| Call discipline triage signals                           | ✅ Live | "Not calling today" + "Leads going cold" surface before other diagnoses |
+
+### Phase 8: Rep Dashboards + GHL Write-back ✅ SHIPPED
+
+| Feature                                                        | Status  | Notes                                                                                         |
+| -------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------- |
+| `rep_personal_kpis` RPC                                        | ✅ Live | Per-rep scorecard, scoped against Aira benchmarks                                             |
+| `location_team_kpis` RPC                                       | ✅ Live | Team roll-up powering the manager/VP drill view                                               |
+| Personal Dashboard for sales reps                              | ✅ Live | Sales reps never see the gym-wide view; empty-state onboarding when all-zero                  |
+| Team This Month section (managers/VPs)                         | ✅ Live | Per-rep mini-cards, color-coded against Aira standards, tap to drill                          |
+| `ghl-book-appointment` Edge Function                           | ✅ Live | Writes to GHL calendar + immediately caches locally                                           |
+| BookAppointmentModal with contact search + auto-rep-assignment | ✅ Live | Falls back to a manager's ghl_user_id when caller has none (e.g., Mike)                       |
+| `portal_assigned_to` column on appointments                    | ✅ Live | Preserves rep assignment across re-syncs (GHL drops `assignedUserId` on unassigned calendars) |
+| Real-data Appointments screen                                  | ✅ Live | Auto-sync on mount, ↻ Refresh, status pills, "show cancelled" toggle                          |
+
+### Phase 9: Admin Onboarding Suite ✅ SHIPPED
+
+| Feature                                                                     | Status  | Notes                                                                  |
+| --------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------- |
+| ⚙️ Admin Onboarding entry point (admin-only)                                | ✅ Live | In the Settings drawer, opens a full-screen three-tab overlay          |
+| **Locations tab**: add / edit / sync / pipeline-stage editor                | ✅ Live | `admin-create-location` + `admin-update-location` Edge Functions       |
+| Inline pipeline-stage flag toggles                                          | ✅ Live | `pipeline_stages_admin_write` RLS policy for admin-only writes         |
+| `ghl_staff` cache table (synced per location)                               | ✅ Live | Sync pulls `GET /users/?locationId=X` into a cache admin UIs read from |
+| **People tab**: invite, link to GHL staff, edit role/locations              | ✅ Live | `admin-invite-user` + `admin-update-user` Edge Functions               |
+| Auto-match by email when linking to existing GHL staff                      | ✅ Live | Falls back to neutral "Portal-only" pill (no warning)                  |
+| Portal-only user architecture                                               | ✅ Live | `users.ghl_user_id = null` is a fully supported state                  |
+| Friendly 409 on duplicate GHL staff link                                    | ✅ Live | `users_ghl_user_id_key` constraint mapped to clean error               |
+| **Health tab**: status cards + integrity checks + sync-all + sync_log table | ✅ Live | `sync_log` has admin-only RLS SELECT                                   |
 
 ### Locations Configured
 
@@ -95,50 +148,29 @@ As of April 18, 2026, the following is live and working:
 
 ## 5. WHAT WE'RE BUILDING NEXT
 
-### Phase 7: The VP Triage View 🔨 IN PROGRESS
+The previous Phase 7 → 9 plan (VP Triage → Coaching Tracker → Accountability Loop) is now partially shipped: Phase 7 (VP Triage) is live. Phase 8 and Phase 9 ended up being different work (rep dashboards, write-back, admin onboarding) — so the two Alyssa-focused deep cuts have been renumbered to **Phase 10** and **Phase 11**.
 
-**Goal:** Turn the Territory Dashboard into a weapon by surfacing which locations are bleeding money, exactly why, and how much.
+### Phase 10: Coaching Action Tracker
 
-**The Core Insight (Mike's Reframe, April 18, 2026):**
-> The 40-memberships/month target is a FLOOR. The real measure is **lead-to-sale conversion**. A location with 200 ad leads and 10 sales isn't "behind target" — it's leaving **$20,950 on the table** because Aira franchisees should convert at minimum 30% of ad leads to sales, maximum 60%.
+When Alyssa opens a red location in the Triage view, she logs what action she took ("Called Jasmine, coached on Deaf Ear close, sending bootcamp script Monday"). Timestamped, searchable, attached to the location. Gives the org a memory of coaching and turns the Triage from read-only observation into a workflow.
 
-**The Math:**
-- **Floor:** 30% of ad leads → sales
-- **Ceiling:** 60% of ad leads → sales
-- **Dollars left on table** = (ad leads × 0.30 − actual sales) × $419
-- (Where $419 = $220 ADPS + 0.20 PIF attach rate × $997)
+**Likely shape:**
 
-**Real April 2026 data through this lens:**
-| Location | Ad Leads | Actual Sales | Floor | Ceiling | Money on Table (Floor) | Upside (Ceiling) |
-|---|---|---|---|---|---|---|
-| Fox Lake | 63 | 4 | 18 | 37 | **$5,866** | $13,827 |
-| Mishawaka | 200 | 10 | 60 | 120 | **$20,950** | $46,090 |
+- "Log coaching action" button on each triage card
+- Modal: free-text note + optional `metric_targeted` (close rate / show rate / booked rate)
+- New `coaching_actions` table (location, user_id, note, metric_targeted, created_at)
+- Chronological log visible on the single-location dashboard
 
-**Status Colors:**
-- 🔴 Red: below 30% floor (money bleeding)
-- 🟡 Yellow: 30-45% (hitting floor, not running the system well)
-- 🟢 Green: 45%+ (running the Aira way)
+### Phase 11: Accountability Loop
 
-**Diagnosis Uses Rule of 3:**
-When a location is red, surface the EARLIEST broken step in the funnel (never more than one diagnosis per card):
-1. Lead → Appointment rate <50% → "Appointments broken."
-2. Show rate <40% → "Shows broken."
-3. Close rate of shows <70% → "Closing broken."
-4. ADPS <$220 → "Fees waived too fast."
+A week after Alyssa logs an action, the portal tells her whether it worked ("You coached Jasmine on close rate April 18. Close rate since: 18% → 34%. Action worked."). Forces measurement of the VP layer itself — the people who coach the people who run the gyms.
 
-**What Alyssa Sees Tomorrow (once shipped):**
-> 🔴 **2 locations need attention today · $26,816 on the table**
->
-> 🔴 **Mishawaka** — $20,950 on the table. *Closing broken. 11% close rate on shows.*
-> 🔴 **Fox Lake** — $5,866 on the table. *Closing broken. 18% close rate on shows.*
+**Likely shape:**
 
-### Phase 8 (After Phase 7): Coaching Action Tracker
-
-When Alyssa opens a red location, she logs what action she took ("Called Jasmine, coached on Deaf Ear close, sending bootcamp script Monday"). Timestamped, searchable. Gives the org a memory of coaching.
-
-### Phase 9 (After Phase 8): Accountability Loop
-
-A week after Alyssa logs an action, the portal tells her whether it worked ("You coached Jasmine on close rate April 18. Close rate since: 18% → 34%. Action worked."). This forces measurement of the VP layer itself.
+- Background job (cron) reads open `coaching_actions` older than 7 days
+- Compares the targeted metric over the follow-up window
+- Posts a review card back to the VP with ✓ / ✗ / flat
+- Rolls up into a "Your Impact" page: how often Alyssa's coaching moves the needle
 
 ---
 
@@ -226,6 +258,7 @@ A week after Alyssa logs an action, the portal tells her whether it worked ("You
 - **Dashboard:** https://supabase.com/dashboard/project/rgpfzactcqbvadthzsgx
 
 Keys (stored in `index.html` for the anon key, and as function env vars for service role):
+
 - **Anon key (public, in app):** `eyJhbGciOiJIUzI1NiIs...` (see `index.html`)
 - **Service role key (server-only):** stored as Edge Function env var `SUPABASE_SERVICE_ROLE_KEY`
 
@@ -233,21 +266,50 @@ Keys (stored in `index.html` for the anon key, and as function env vars for serv
 
 > ⚠️ **Critical:** These are LOCATION-level Private Integration Tokens. Agency-level PITs will NOT work for these endpoints.
 
-| Location | GHL Location ID | PIT Token |
-|---|---|---|
-| Fox Lake | `ksTER6vcHvi08UdPCVxc` | `pit-539ec1d0-5ec9-4929-9fc7-ba318b39c61f` |
+| Location  | GHL Location ID        | PIT Token                                  |
+| --------- | ---------------------- | ------------------------------------------ |
+| Fox Lake  | `ksTER6vcHvi08UdPCVxc` | `pit-539ec1d0-5ec9-4929-9fc7-ba318b39c61f` |
 | Mishawaka | `dLfhsz6BpBB8Su1nqnuc` | `pit-afcea4c8-1536-4d13-9426-9b9447f1a7f8` |
 
 Stored in `locations.ghl_api_key` column in Supabase.
 
 ### User Accounts (Seeded)
 
-| Email | Role | Access | Password |
-|---|---|---|---|
-| mikebell@airafitness.com | admin | All locations | `AiraAdmin2026!` |
-| akathan24@gmail.com | vp | Fox Lake + Mishawaka | (set by user) |
-| jmcrago1003@gmail.com | manager | Fox Lake | (set by user) |
-| jenny_davaalos@hotmail.com | sales_rep | Fox Lake | (set by user) |
+| Email                      | Role      | Access               | Password         |
+| -------------------------- | --------- | -------------------- | ---------------- |
+| mikebell@airafitness.com   | admin     | All locations        | `AiraAdmin2026!` |
+| akathan24@gmail.com        | vp        | Fox Lake + Mishawaka | (set by user)    |
+| jmcrago1003@gmail.com      | manager   | Fox Lake             | (set by user)    |
+| jenny_davaalos@hotmail.com | sales_rep | Fox Lake             | (set by user)    |
+
+### Supabase Schema (key tables)
+
+All tables live in `public` and have RLS enabled.
+
+| Table                                       | What it holds                                                                                                                 | Who can read                                                                    |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `locations`                                 | One row per gym: `ghl_location_id`, `name`, `ghl_api_key`, `ghl_calendar_id`, `pipeline_id`, `timezone`, `active`             | Admin: all; others: only linked locations                                       |
+| `users`                                     | Portal users: `auth_user_id`, `email`, `full_name`, `role`, `ghl_user_id` (optional), `active`                                | Self + coworkers at shared locations; admin: all                                |
+| `user_locations`                            | N-to-N between users and locations, with `is_primary` flag                                                                    | Self + admin                                                                    |
+| `contacts`, `opportunities`, `appointments` | Cached mirror of GHL data                                                                                                     | Via `can_access_ghl_location()`                                                 |
+| `appointments.portal_assigned_to`           | Rep attribution set at booking time; **sync never overwrites** it                                                             | —                                                                               |
+| `pipeline_stages`                           | Stages discovered from GHL, with `counts_as_show / counts_as_no_show / counts_as_sale` flags                                  | Via `can_access_ghl_location()`; admin writes via `pipeline_stages_admin_write` |
+| `call_logs`                                 | "How'd it go?" outcomes logged per tap-to-call (`outcome`, `notes`, `user_id`)                                                | Location scope                                                                  |
+| `sync_log`                                  | History of every sync attempt (status, type, started_at, completed_at, error_message, metadata.counts)                        | **Admin only**                                                                  |
+| `ghl_staff`                                 | Cache of `GET /users/?locationId=X`, keyed `(ghl_location_id, ghl_user_id)` — powers admin "link existing GHL staff" dropdown | Via `can_access_ghl_location()`                                                 |
+
+### Deployed Edge Functions
+
+All deployed with `--no-verify-jwt` (the gateway passes through; our functions verify JWT + role internally).
+
+| Function                | Purpose                                                                                                             | Caller requirements                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `sync-ghl-to-cache`     | Pulls GHL contacts/opps/appointments/staff into cache tables; auto-discovers pipelines for new locations            | Any authenticated user _(not yet admin-gated — see Known Issues)_ |
+| `ghl-book-appointment`  | Creates a calendar event in GHL, then upserts the cache with `portal_assigned_to` set                               | User with `can_access_ghl_location(ghl_location_id)`              |
+| `admin-create-location` | Inserts a new `locations` row                                                                                       | Admin only (verified via `current_user_role()`)                   |
+| `admin-update-location` | Updates a location; empty strings mean "keep existing" (never wipes `ghl_api_key`)                                  | Admin only                                                        |
+| `admin-invite-user`     | Creates auth user (no email — avoids rate limit) + `users` row + `user_locations`; returns optional `recovery_link` | Admin only                                                        |
+| `admin-update-user`     | Updates user scalars (with friendly 409 on duplicate `ghl_user_id` link) + replaces `user_locations`                | Admin only                                                        |
 
 ---
 
@@ -255,19 +317,19 @@ Stored in `locations.ghl_api_key` column in Supabase.
 
 Source: **Aira 5-Day Training v8**, page 35 — "Key Numbers Every Franchisee Must Know"
 
-| Metric | Aira Target | Portal Threshold (Red) |
-|---|---|---|
-| Min ad spend / day | $40 | N/A (informational) |
-| Target leads / day | 8-10 | N/A |
-| Lead → Appointment rate | 50%+ | <50% = "Appointments broken" |
-| Show rate | 40-50% | <40% = "Shows broken" |
-| **Close rate of shows** | **70%+** | **<70% = "Closing broken"** |
-| **ADPS (Avg Dollar Per Sale)** | **$220+** | **<$220 = "Fees waived too fast"** |
-| PIF attach rate | 20% of sales | — |
-| Attrition rate | ≤7% | — |
-| CPL (Cost Per Lead) | ≤$20 | — |
-| **Month 1 memberships** | **40 sign-ups** | Floor is 30% lead-to-sale |
-| **Month 1 revenue** | **$15,000+** | — |
+| Metric                         | Aira Target     | Portal Threshold (Red)             |
+| ------------------------------ | --------------- | ---------------------------------- |
+| Min ad spend / day             | $40             | N/A (informational)                |
+| Target leads / day             | 8-10            | N/A                                |
+| Lead → Appointment rate        | 50%+            | <50% = "Appointments broken"       |
+| Show rate                      | 40-50%          | <40% = "Shows broken"              |
+| **Close rate of shows**        | **70%+**        | **<70% = "Closing broken"**        |
+| **ADPS (Avg Dollar Per Sale)** | **$220+**       | **<$220 = "Fees waived too fast"** |
+| PIF attach rate                | 20% of sales    | —                                  |
+| Attrition rate                 | ≤7%             | —                                  |
+| CPL (Cost Per Lead)            | ≤$20            | —                                  |
+| **Month 1 memberships**        | **40 sign-ups** | Floor is 30% lead-to-sale          |
+| **Month 1 revenue**            | **$15,000+**    | —                                  |
 
 ### The Rule of 3 (Page 36 of Training)
 
@@ -278,6 +340,7 @@ This is the single most important concept in the entire portal. Every diagnosis 
 ### Lead Sources (How we classify "ad leads")
 
 **Counts as "ad lead" (subject to 30-60% floor):**
+
 - Facebook Ad, Instagram Ad, Meta Ad
 - Free Week Offer Claim, Keyfob funnel
 - Landing page, Website form
@@ -285,6 +348,7 @@ This is the single most important concept in the entire portal. Every diagnosis 
 - Any contact with an unclassified/null source (default-safe)
 
 **Counts as "Extra Credit" (excluded from core math):**
+
 - Comments on ads
 - DMs / Direct Messages / Messages
 - Organic social
@@ -326,26 +390,31 @@ cd ~/Downloads/operator-portal
 ### Daily Use
 
 **Open the portal locally (with uncommitted changes):**
+
 ```bash
 open ~/Downloads/operator-portal/index.html
 ```
 
 **Open the live portal:**
+
 ```bash
 open https://airafitnessfranchise.github.io/operator-portal/
 ```
 
 **Check git status:**
+
 ```bash
 git status
 ```
 
 **Pull latest changes from remote:**
+
 ```bash
 git pull origin main
 ```
 
 **Commit and push your changes:**
+
 ```bash
 git add .
 git commit -m "Your commit message here"
@@ -355,11 +424,13 @@ git push origin main
 ### Supabase Edge Function
 
 **Deploy the GHL sync function after editing:**
+
 ```bash
 supabase functions deploy sync-ghl-to-cache --no-verify-jwt --project-ref rgpfzactcqbvadthzsgx
 ```
 
 **Trigger a sync for ALL locations:**
+
 ```bash
 curl -sS -X POST https://rgpfzactcqbvadthzsgx.supabase.co/functions/v1/sync-ghl-to-cache \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJncGZ6YWN0Y3FidmFkdGh6c2d4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0NzU2NTQsImV4cCI6MjA5MjA1MTY1NH0.rbiSxQfzVU_pvF9X8BN2jGU_pBdcwJRN_n00pivAc1w" \
@@ -368,6 +439,7 @@ curl -sS -X POST https://rgpfzactcqbvadthzsgx.supabase.co/functions/v1/sync-ghl-
 ```
 
 **Trigger a sync for ONE location (replace the ID):**
+
 ```bash
 curl -sS -X POST https://rgpfzactcqbvadthzsgx.supabase.co/functions/v1/sync-ghl-to-cache \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
@@ -378,6 +450,7 @@ curl -sS -X POST https://rgpfzactcqbvadthzsgx.supabase.co/functions/v1/sync-ghl-
 ### Claude Code
 
 **Start a Claude Code session in the project:**
+
 ```bash
 cd ~/Downloads/operator-portal
 claude
@@ -391,28 +464,32 @@ Then paste any of the build briefs from this document or your conversation with 
 
 ### Known Issues (deferred, not blocking)
 
-| Issue | Impact | Workaround / Fix |
-|---|---|---|
-| Fox Lake calendar returns 0 events | Appointments screen shows empty for Fox Lake | Need to identify correct calendar ID with Jasmine. Mishawaka doesn't have a calendar ID configured yet either. |
-| All opportunities have `assigned_to: null` in Fox Lake | Rep leaderboard shows zeros | Process conversation needed with Jasmine — reps aren't being tagged in GHL |
-| Ad Spend hardcoded as "—" | Dashboard shows placeholder | Waiting to decide how to source Facebook Ad Manager data. API or manual weekly entry? |
-| Leads / Conversations / Appointments screens still use demo data | Operators see fake leads | Wire to real data after Phase 7 ships |
-| Two API keys have been shared in chat history | Minor security risk | Rotate when convenient; both are location-scoped (limited blast radius) |
+| Issue                                                               | Impact                                                                  | Workaround / Fix                                                                                                                                                                       |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sync-ghl-to-cache` accepts any authenticated JWT — not admin-gated | Any signed-in user can trigger a sync (idempotent, rate-limited by GHL) | Low risk; tighten with the same `current_user_role()` gate the other admin-\* functions use when convenient                                                                            |
+| Ad Spend hardcoded as "—"                                           | Single-location + territory dashboards show placeholder                 | Waiting on a decision: Facebook Ad Manager API vs. manual weekly entry                                                                                                                 |
+| Leads + Conversations screens still use demo data                   | Operators see seeded Fox Lake leads instead of live GHL data            | Wire to real data in a follow-up pass (Appointments already switched in Phase 8)                                                                                                       |
+| Two API keys were pasted in chat history during development         | Minor security footprint                                                | Rotate when convenient; both are location-scoped (limited blast radius)                                                                                                                |
+| Historical Fox Lake opportunities still have `assigned_to = null`   | Rep dashboards won't backfill for pre-portal bookings                   | Going forward is fine — `portal_assigned_to` is set at booking time and `coalesce(portal_assigned_to, assigned_to)` drives rep KPIs. Separate Jasmine-led cleanup for historical rows. |
 
 ### Common Problems
 
 **"I see zeros on the dashboard after logging in":**
+
 - Browser may have cached old HTML. Hard refresh: `Cmd+Shift+R`
 - If still zero, the cache hasn't been populated. Trigger a sync (see commands above).
 
 **"Sync function returns an error about pipeline_id":**
+
 - The location likely doesn't have a `pipeline_id` in the DB. The sync should auto-discover it, but if that fails, it means GHL returned no pipelines for that location. Check that the PIT has the right scopes.
 
 **"GitHub Pages isn't showing my latest push":**
+
 - Can take 30-60 seconds after push. Check the Actions tab on GitHub for deploy status.
 - Sometimes browser caches the old version. Try incognito mode.
 
 **"I can't log in — password incorrect":**
+
 - Passwords for franchisee accounts need to be set by them on first login (via Supabase magic link, although we don't use magic links for operators yet — TBD flow).
 - Mike's admin password is set directly in the auth.users table. See section 7.
 
@@ -420,23 +497,19 @@ Then paste any of the build briefs from this document or your conversation with 
 
 ## 12. ROADMAP
 
-**Priority ordered. Each = roughly one focused build session with Claude Code.**
+**Priority ordered. Each = roughly one focused build session with Claude Code.** Items 1–4 from the previous version (Multi-location + Territory, VP Triage, personal rep dashboards, admin onboarding) are shipped and now live in Section 4.
 
-| # | Feature | Value Delivered |
-|---|---|---|
-| 1 | ✅ Multi-location + Territory Dashboard | VPs see territory at a glance |
-| 2 | 🔨 VP Triage View (Phase 7) | Alyssa opens the app and knows who to coach |
-| 3 | Coaching Action Tracker (Phase 8) | Coaching stops disappearing into DMs |
-| 4 | Accountability Loop (Phase 9) | VPs can measure their own impact |
-| 5 | Wire Leads screen to real GHL data | Jasmine sees real leads on her phone |
-| 6 | Wire Conversations screen to real data | Reply to SMS from the portal |
-| 7 | Fix Fox Lake calendar mapping | Appointments screen becomes useful |
-| 8 | Facebook Ad Spend integration | ADPS calculations include ad spend data |
-| 9 | Custom domain portal.airafitness.com | Professional URL for franchisees |
-| 10 | Onboard next 3 locations | Test the location-adding workflow |
-| 11 | Rep-level login scoping | Jenny sees only her assigned leads |
-| 12 | Call logging ("How'd it go?" prompt) | Auto-update lead status after calls |
-| 13 | Multi-location rollout to all 22+ gyms | Replace GHL white-label app entirely |
+| #   | Feature                                       | Value Delivered                                                               |
+| --- | --------------------------------------------- | ----------------------------------------------------------------------------- |
+| 1   | Coaching Action Tracker (Phase 10)            | Coaching stops disappearing into DMs; every red diagnosis has an owned action |
+| 2   | Accountability Loop (Phase 11)                | VPs can measure their own impact — did the coaching move the metric?          |
+| 3   | Lock `sync-ghl-to-cache` to admin / cron only | Tightens the single Edge Function that still accepts any authenticated JWT    |
+| 4   | Wire Leads screen to real GHL data            | Jasmine sees real leads on her phone (replaces seeded demo rows)              |
+| 5   | Wire Conversations screen to real data        | Reply to SMS from the portal                                                  |
+| 6   | Facebook Ad Spend integration                 | ADPS calculations include ad-spend data; removes "—" placeholder              |
+| 7   | Custom domain `portal.airafitness.com`        | Professional URL for franchisees                                              |
+| 8   | Onboard next 3 locations                      | Exercise the location-add workflow built in Phase 9A                          |
+| 9   | Multi-location rollout to all 22+ gyms        | Replace the GHL white-label app entirely                                      |
 
 ---
 
@@ -447,6 +520,7 @@ This is the playbook for when Aira opens gym #3, #4, #22.
 ### Step 1: Get the GHL Info
 
 From the new location's sub-account in GoHighLevel:
+
 1. Copy the **Location ID** (usually a 20-character alphanumeric string)
 2. Create a **Location-Level Private Integration Token** (Settings → Private Integrations → New Token)
 3. Give it scopes: contacts.readonly, opportunities.readonly, conversations.readonly, calendars.readonly (and any write scopes you want later)
@@ -482,6 +556,7 @@ curl -sS -X POST https://rgpfzactcqbvadthzsgx.supabase.co/functions/v1/sync-ghl-
 ```
 
 The Edge Function will:
+
 - Pull all contacts and opportunities
 - Auto-discover the pipeline and its stages
 - Apply heuristic flags to stages (Sold = sale, No Show = no show, etc.)
@@ -544,6 +619,12 @@ Each gym's PIT is stored in `locations.ghl_api_key`. Agency-level PITs don't hav
 **April 18, 2026 — No magic links for operator auth.**
 Email + password only. Magic links create friction on phones; operators need to be able to log in fast and stay logged in.
 
+**April 18, 2026 — Architecture locked: portal is the source of truth; GHL stays infrastructure.**
+No human user of the Aira portal should ever need to open GoHighLevel. Operators see the portal, period — GHL is plumbing. Practical consequences: `portal_assigned_to` drives rep attribution even when GHL doesn't populate `assignedUserId`; booking / status writes flow portal → GHL one-way; and admin onboarding never asks operators to touch GHL to create an account.
+
+**April 18, 2026 — Portal-only user architecture (Phase 9B).**
+`public.users.ghl_user_id = null` is a fully supported, first-class state. A portal user doesn't need a GHL account to exist, be tracked, or have their work attributed. The UI shows a neutral "Portal-only" pill — not a warning. Admins can optionally link a user to an existing `ghl_staff` row later, but are never required to. This unblocks hiring reps without any GHL IT step.
+
 ---
 
-*End of reference document. Keep this file updated as the portal evolves — it's the single source of truth for what's real, what's planned, and why.*
+_End of reference document. Keep this file updated as the portal evolves — it's the single source of truth for what's real, what's planned, and why._
