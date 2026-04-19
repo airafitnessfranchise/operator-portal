@@ -3478,9 +3478,9 @@
       }
 
       // ── Triage View (VP's weapon) ──
-      const TRIAGE_RED = "#ef4444";
-      const TRIAGE_AMBER = "#f59e0b";
-      const TRIAGE_GREEN = "#10b981";
+      const TRIAGE_RED = "#E24B4A";
+      const TRIAGE_AMBER = "#F59E0B";
+      const TRIAGE_GREEN = "#10B981";
 
       function formatCurrency(n) {
         return "$" + (Number(n) || 0).toLocaleString();
@@ -3502,12 +3502,12 @@
           : isYellow
             ? TRIAGE_AMBER
             : TRIAGE_GREEN;
-        const bgTint = isRed
-          ? "rgba(239,68,68,0.07)"
+        const statusLabel = isRed
+          ? "NEEDS ATTENTION"
           : isYellow
-            ? "rgba(245,158,11,0.07)"
-            : "rgba(16,185,129,0.05)";
-        const pillLabel = isRed
+            ? "UNDER STANDARD"
+            : "HEALTHY";
+        const headline = isRed
           ? `${formatCurrency(row.floor_gap_dollars)} on the table`
           : isYellow
             ? `${formatCurrency(row.ceiling_upside_dollars)} upside`
@@ -3518,32 +3518,58 @@
 
         return (
           <div
+            className="surface-card"
             style={{
-              background: bgTint,
               borderLeft: `4px solid ${color}`,
-              borderTop: `1px solid ${T.border}`,
-              borderRight: `1px solid ${T.border}`,
-              borderBottom: `1px solid ${T.border}`,
-              borderRadius: 12,
-              padding: 18,
+              padding: 20,
               marginBottom: 12,
             }}
           >
             <div
               style={{
                 display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                gap: 12,
+                alignItems: "center",
+                gap: 8,
                 marginBottom: 10,
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: color,
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 500,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: T.textMuted,
+                }}
+              >
+                {statusLabel}
+              </span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                gap: 12,
+                marginBottom: 6,
               }}
             >
               <div
                 style={{
-                  fontSize: 18,
-                  fontWeight: 800,
-                  color: T.white,
+                  fontSize: 16,
+                  fontWeight: 500,
+                  color: T.textHi,
                   fontFamily: "'Outfit',sans-serif",
+                  letterSpacing: "-0.01em",
                   minWidth: 0,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -3552,29 +3578,28 @@
               >
                 {row.location_name}
               </div>
-              {pillLabel && (
+              {headline && (
                 <div
                   style={{
-                    padding: "4px 10px",
-                    borderRadius: 8,
-                    background: color + "22",
-                    color,
-                    fontSize: 12,
-                    fontWeight: 800,
+                    fontFamily: "'Outfit',sans-serif",
+                    letterSpacing: "-0.01em",
+                    fontSize: 16,
+                    fontWeight: 500,
+                    color: T.textHi,
                     whiteSpace: "nowrap",
                     flexShrink: 0,
                   }}
                 >
-                  {pillLabel}
+                  {headline}
                 </div>
               )}
             </div>
             <div
               style={{
                 fontSize: 13,
-                color: T.text,
-                marginBottom: 10,
-                lineHeight: 1.4,
+                color: T.textMuted,
+                marginBottom: 14,
+                lineHeight: 1.5,
               }}
             >
               {perfLine}
@@ -3582,13 +3607,13 @@
             <div
               style={{
                 fontSize: 14,
-                color: T.white,
-                fontWeight: 500,
+                color: T.text,
+                fontWeight: 400,
                 lineHeight: 1.5,
-                marginBottom: 12,
+                marginBottom: 14,
               }}
             >
-              <span style={{ color: T.accent, fontWeight: 800 }}>
+              <span style={{ color: T.textHi, fontWeight: 500 }}>
                 {diag.head}
               </span>
               {diag.body && <> {diag.body}</>}
@@ -3596,10 +3621,9 @@
             {row.extra_credit_leads_count > 0 && (
               <div
                 style={{
-                  fontSize: 11,
-                  color: T.dim,
-                  marginBottom: 8,
-                  fontStyle: "italic",
+                  fontSize: 12,
+                  color: T.textMuted,
+                  marginBottom: 10,
                 }}
               >
                 +{row.extra_credit_leads_count} organic conversations helping
@@ -3609,37 +3633,31 @@
               <div
                 style={{
                   fontSize: 12,
-                  color: TRIAGE_AMBER,
-                  marginBottom: 12,
-                  fontWeight: 600,
+                  color: T.text,
+                  marginBottom: 14,
+                  fontWeight: 500,
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
                 }}
               >
-                <span>⚠</span>
-                <span>
-                  {row.awaiting_update} appointments need status update in GHL
-                </span>
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: T.amber,
+                    flexShrink: 0,
+                  }}
+                />
+                {row.awaiting_update} appointments need status update in GHL
               </div>
             )}
             <button
+              className="btn-primary"
               onClick={() => onOpen(row.ghl_location_id)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                borderRadius: 8,
-                border: `1px solid ${T.accent}33`,
-                background: T.accentDim,
-                color: T.accent,
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
             >
-              Open location →
+              Open location
             </button>
           </div>
         );
@@ -3700,15 +3718,15 @@
               : "All locations running healthy.";
 
         return (
-          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
-            <div style={{ marginBottom: 18 }}>
+          <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
+            <div style={{ marginBottom: 20 }}>
               <div
                 style={{
                   fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
+                  fontWeight: 500,
+                  letterSpacing: "0.12em",
                   textTransform: "uppercase",
-                  color: T.dim,
+                  color: T.textMuted,
                 }}
               >
                 {monthLabel}
@@ -3716,10 +3734,11 @@
               <div
                 style={{
                   fontSize: 22,
-                  fontWeight: 800,
-                  color: T.white,
+                  fontWeight: 500,
+                  color: T.textHi,
                   fontFamily: "'Outfit',sans-serif",
-                  marginTop: 2,
+                  letterSpacing: "-0.01em",
+                  marginTop: 4,
                 }}
               >
                 Triage
@@ -3728,34 +3747,32 @@
 
             {error && (
               <div
+                className="surface-card"
                 style={{
-                  padding: "12px 14px",
-                  borderRadius: 10,
-                  background: T.redDim,
-                  border: `1px solid ${T.red}33`,
+                  padding: "14px 16px",
                   marginBottom: 16,
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  gap: 10,
+                  gap: 12,
+                  borderLeft: `3px solid ${T.red}`,
                 }}
               >
-                <div style={{ color: T.red, fontSize: 12, fontWeight: 600 }}>
-                  Couldn't load triage data.
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: T.red,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <div style={{ color: T.text, fontSize: 13, fontWeight: 500 }}>
+                    Couldn't load triage data.
+                  </div>
                 </div>
-                <button
-                  onClick={onRefresh}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 8,
-                    border: `1px solid ${T.red}44`,
-                    background: "transparent",
-                    color: T.red,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
+                <button className="btn-ghost" onClick={onRefresh}>
                   Retry
                 </button>
               </div>
@@ -3764,24 +3781,31 @@
             {/* Call-to-action banner */}
             {!loading && !error && (
               <div
+                className="surface-card"
                 style={{
-                  padding: "14px 16px",
-                  borderRadius: 12,
-                  background: bannerColor + "14",
-                  border: `1px solid ${bannerColor}44`,
+                  padding: "16px 18px",
                   marginBottom: 18,
                   display: "flex",
                   alignItems: "center",
-                  gap: 10,
+                  gap: 12,
+                  borderLeft: `3px solid ${bannerColor}`,
                 }}
               >
-                <span style={{ fontSize: 16 }}>{bannerEmoji}</span>
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: bannerColor,
+                    flexShrink: 0,
+                  }}
+                />
                 <div
                   style={{
-                    color: T.white,
+                    color: T.text,
                     fontSize: 13,
-                    fontWeight: 600,
-                    lineHeight: 1.4,
+                    fontWeight: 500,
+                    lineHeight: 1.5,
                   }}
                 >
                   {bannerText}
@@ -3796,12 +3820,10 @@
                 {[0, 1].map((i) => (
                   <div
                     key={`skel-${i}`}
+                    className="surface-card"
                     style={{
-                      background: T.card,
                       borderLeft: `4px solid ${T.border}`,
-                      border: `1px solid ${T.border}`,
-                      borderRadius: 12,
-                      padding: 18,
+                      padding: 20,
                       display: "flex",
                       flexDirection: "column",
                       gap: 10,
@@ -3848,11 +3870,9 @@
             {/* Green (collapsed) */}
             {!loading && greens.length > 0 && (
               <div
+                className="surface-card"
                 style={{
-                  background: T.card,
-                  border: `1px solid ${T.border}`,
                   borderLeft: `4px solid ${TRIAGE_GREEN}`,
-                  borderRadius: 12,
                   marginBottom: 12,
                   overflow: "hidden",
                 }}
@@ -3862,7 +3882,7 @@
                   style={{
                     width: "100%",
                     textAlign: "left",
-                    padding: "14px 18px",
+                    padding: "16px 18px",
                     background: "transparent",
                     border: "none",
                     color: T.text,
@@ -3874,13 +3894,28 @@
                   }}
                 >
                   <span
-                    style={{ fontSize: 13, fontWeight: 700, color: T.white }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: T.text,
+                    }}
                   >
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: TRIAGE_GREEN,
+                      }}
+                    />
                     {greens.length} location{greens.length === 1 ? "" : "s"}{" "}
                     running healthy
                   </span>
-                  <span style={{ fontSize: 11, color: T.dim }}>
-                    {greenExpanded ? "▴ Hide" : "▾ Show"}
+                  <span style={{ fontSize: 12, color: T.textMuted }}>
+                    {greenExpanded ? "Hide" : "Show"}
                   </span>
                 </button>
                 {greenExpanded && (
@@ -3899,15 +3934,15 @@
 
             {/* Gray (insufficient data) */}
             {!loading && grays.length > 0 && (
-              <div style={{ marginTop: 6 }}>
+              <div style={{ marginTop: 10 }}>
                 <div
                   style={{
                     fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: "0.1em",
+                    fontWeight: 500,
+                    letterSpacing: "0.12em",
                     textTransform: "uppercase",
-                    color: T.muted,
-                    marginBottom: 8,
+                    color: T.textMuted,
+                    marginBottom: 10,
                   }}
                 >
                   Insufficient data
@@ -3915,11 +3950,9 @@
                 {grays.map((r) => (
                   <div
                     key={r.ghl_location_id}
+                    className="surface-card"
                     style={{
-                      background: T.card,
-                      border: `1px solid ${T.border}`,
-                      borderRadius: 10,
-                      padding: "12px 16px",
+                      padding: "14px 18px",
                       marginBottom: 8,
                       display: "flex",
                       justifyContent: "space-between",
@@ -3931,8 +3964,8 @@
                       <div
                         style={{
                           fontSize: 13,
-                          fontWeight: 700,
-                          color: T.text,
+                          fontWeight: 500,
+                          color: T.textHi,
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
@@ -3940,22 +3973,20 @@
                       >
                         {r.location_name}
                       </div>
-                      <div style={{ fontSize: 11, color: T.muted }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: T.textMuted,
+                          marginTop: 2,
+                        }}
+                      >
                         Need 10+ ad leads to diagnose ({r.ad_leads_count} so
                         far)
                       </div>
                     </div>
                     <button
+                      className="btn-ghost"
                       onClick={() => onSelectLocation(r.ghl_location_id)}
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: 8,
-                        border: `1px solid ${T.border}`,
-                        background: "transparent",
-                        color: T.dim,
-                        fontSize: 12,
-                        cursor: "pointer",
-                      }}
                     >
                       Open →
                     </button>
