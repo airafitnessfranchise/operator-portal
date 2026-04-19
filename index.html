@@ -2990,14 +2990,32 @@
           setInfo("Check your email for a reset link.");
         };
 
+        const inputStyle = {
+          padding: "12px 14px",
+          borderRadius: 10,
+          border: `0.5px solid ${T.border}`,
+          background: T.surface,
+          color: T.text,
+          fontSize: 15,
+          outline: "none",
+          transition: "border-color 160ms ease",
+        };
+        const labelStyle = {
+          fontSize: 10,
+          fontWeight: 500,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: T.textMuted,
+        };
+
         return (
           <div
             style={{
-              maxWidth: 480,
+              maxWidth: 440,
               margin: "0 auto",
               minHeight: "100vh",
               background: T.bg,
-              padding: "60px 24px 40px",
+              padding: "72px 24px 40px",
               display: "flex",
               flexDirection: "column",
             }}
@@ -3007,23 +3025,24 @@
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                marginBottom: 36,
+                marginBottom: 40,
               }}
             >
               <div
                 style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 16,
-                  background: `linear-gradient(135deg,${T.accent},${T.orange})`,
+                  width: 56,
+                  height: 56,
+                  borderRadius: 14,
+                  background: T.airaBlue,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 30,
-                  fontWeight: 900,
-                  color: T.bg,
+                  fontSize: 26,
+                  fontWeight: 500,
+                  color: "#ffffff",
                   fontFamily: "'Outfit',sans-serif",
-                  marginBottom: 16,
+                  letterSpacing: "-0.01em",
+                  marginBottom: 18,
                 }}
               >
                 A
@@ -3031,21 +3050,22 @@
               <div
                 style={{
                   fontSize: 22,
-                  fontWeight: 800,
-                  color: T.white,
+                  fontWeight: 500,
+                  color: T.textHi,
                   fontFamily: "'Outfit',sans-serif",
                   letterSpacing: "-0.01em",
                 }}
               >
-                AIRA FITNESS
+                Aira Fitness
               </div>
               <div
                 style={{
                   fontSize: 11,
-                  color: T.dim,
-                  letterSpacing: "0.14em",
+                  color: T.textMuted,
+                  letterSpacing: "0.12em",
                   textTransform: "uppercase",
-                  marginTop: 4,
+                  marginTop: 6,
+                  fontWeight: 500,
                 }}
               >
                 Operator Portal
@@ -3053,27 +3073,15 @@
             </div>
             <form
               onSubmit={handleLogin}
+              className="surface-card"
               style={{
-                background: T.card,
-                border: `1px solid ${T.border}`,
-                borderRadius: 16,
-                padding: 22,
+                padding: 24,
                 display: "flex",
                 flexDirection: "column",
                 gap: 12,
               }}
             >
-              <label
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  color: T.dim,
-                }}
-              >
-                Email
-              </label>
+              <label style={labelStyle}>Email</label>
               <input
                 type="email"
                 autoComplete="username"
@@ -3082,93 +3090,78 @@
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@airafitness.com"
-                style={{
-                  padding: "12px 14px",
-                  borderRadius: 10,
-                  border: `1px solid ${T.border}`,
-                  background: T.surface,
-                  color: T.text,
-                  fontSize: 15,
-                  outline: "none",
-                }}
+                style={inputStyle}
               />
-              <label
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  color: T.dim,
-                  marginTop: 4,
-                }}
-              >
-                Password
-              </label>
+              <label style={{ ...labelStyle, marginTop: 4 }}>Password</label>
               <input
                 type="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                style={{
-                  padding: "12px 14px",
-                  borderRadius: 10,
-                  border: `1px solid ${T.border}`,
-                  background: T.surface,
-                  color: T.text,
-                  fontSize: 15,
-                  outline: "none",
-                }}
+                style={inputStyle}
               />
               {error && (
                 <div
                   style={{
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    background: T.redDim,
-                    border: `1px solid ${T.red}33`,
-                    color: T.red,
-                    fontSize: 12,
-                    fontWeight: 600,
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    background: T.surface,
+                    border: `0.5px solid ${T.border}`,
+                    borderLeft: `3px solid ${T.red}`,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    color: T.text,
+                    fontSize: 13,
+                    fontWeight: 500,
                   }}
                 >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: T.red,
+                      flexShrink: 0,
+                    }}
+                  />
                   {error}
                 </div>
               )}
               {info && (
                 <div
                   style={{
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    background: T.accentDim,
-                    border: `1px solid ${T.accent}33`,
-                    color: T.accent,
-                    fontSize: 12,
-                    fontWeight: 600,
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    background: T.surface,
+                    border: `0.5px solid ${T.border}`,
+                    borderLeft: `3px solid ${T.airaBlue}`,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    color: T.text,
+                    fontSize: 13,
+                    fontWeight: 500,
                   }}
                 >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: T.airaBlue,
+                      flexShrink: 0,
+                    }}
+                  />
                   {info}
                 </div>
               )}
               <button
                 type="submit"
+                className="btn-primary"
                 disabled={loading || !email || !password}
-                style={{
-                  marginTop: 8,
-                  padding: "14px",
-                  borderRadius: 10,
-                  border: "none",
-                  background:
-                    loading || !email || !password
-                      ? T.muted
-                      : `linear-gradient(135deg,${T.accent},${T.blue})`,
-                  color: T.bg,
-                  fontSize: 14,
-                  fontWeight: 800,
-                  letterSpacing: "0.04em",
-                  cursor:
-                    loading || !email || !password ? "not-allowed" : "pointer",
-                }}
+                style={{ marginTop: 8, padding: "14px 20px" }}
               >
                 {loading ? "Signing in…" : "Sign In"}
               </button>
@@ -3176,15 +3169,8 @@
                 type="button"
                 onClick={handleReset}
                 disabled={loading}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: T.dim,
-                  fontSize: 12,
-                  cursor: "pointer",
-                  padding: "4px",
-                  fontWeight: 600,
-                }}
+                className="btn-ghost"
+                style={{ fontSize: 13, alignSelf: "center" }}
               >
                 Forgot password?
               </button>
@@ -3213,14 +3199,15 @@
                 width: 54,
                 height: 54,
                 borderRadius: 14,
-                background: `linear-gradient(135deg,${T.accent},${T.orange})`,
+                background: T.airaBlue,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 26,
-                fontWeight: 900,
-                color: T.bg,
+                fontWeight: 500,
+                color: "#ffffff",
                 fontFamily: "'Outfit',sans-serif",
+                letterSpacing: "-0.01em",
                 marginBottom: 24,
               }}
             >
@@ -3229,9 +3216,10 @@
             <div
               style={{
                 fontSize: 20,
-                fontWeight: 800,
-                color: T.white,
+                fontWeight: 500,
+                color: T.textHi,
                 fontFamily: "'Outfit',sans-serif",
+                letterSpacing: "-0.01em",
                 marginBottom: 10,
                 textAlign: "center",
               }}
@@ -3240,29 +3228,17 @@
             </div>
             <div
               style={{
-                fontSize: 13,
-                color: T.dim,
+                fontSize: 14,
+                color: T.textMuted,
                 textAlign: "center",
                 lineHeight: 1.5,
-                maxWidth: 320,
-                marginBottom: 24,
+                maxWidth: 340,
+                marginBottom: 28,
               }}
             >
               {body}
             </div>
-            <button
-              onClick={onLogout}
-              style={{
-                padding: "12px 24px",
-                borderRadius: 10,
-                border: `1px solid ${T.border}`,
-                background: T.card,
-                color: T.text,
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
+            <button className="btn-secondary" onClick={onLogout}>
               Log out
             </button>
           </div>
