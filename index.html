@@ -3061,7 +3061,7 @@
       }
 
       // ── Settings Drawer ──
-      function SettingsDrawer({ profile, onClose, onLogout }) {
+      function SettingsDrawer({ profile, onClose, onLogout, onOpenAdmin }) {
         const initial = (profile.full_name ||
           profile.email ||
           "?")[0].toUpperCase();
@@ -3199,6 +3199,27 @@
                 </span>
               </div>
               <div style={{ flex: 1 }} />
+              {profile.role === "admin" && onOpenAdmin && (
+                <button
+                  onClick={onOpenAdmin}
+                  style={{
+                    padding: "12px",
+                    borderRadius: 10,
+                    border: `1px solid ${T.accent}33`,
+                    background: T.accentDim,
+                    color: T.accent,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                  }}
+                >
+                  ⚙️ Admin Onboarding
+                </button>
+              )}
               <button
                 onClick={onLogout}
                 style={{
@@ -5657,6 +5678,1054 @@
         );
       }
 
+      // ── Admin Onboarding ──
+      const ADMIN_TABS = [
+        { key: "locations", label: "Locations" },
+        { key: "people", label: "People" },
+        { key: "health", label: "Health" },
+      ];
+
+      async function callEdgeFunction(path, body) {
+        const { data: session } = await window.supabase.auth.getSession();
+        const jwt = session?.session?.access_token;
+        if (!jwt) throw new Error("Not signed in");
+        const res = await fetch(
+          `https://rgpfzactcqbvadthzsgx.supabase.co/functions/v1/${path}`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body || {}),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        return data;
+      }
+
+      function AdminOnboardingOverlay({ profile, onClose, onRefresh }) {
+        const [tab, setTab] = useState("locations");
+        return (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 260,
+              background: T.bg,
+              overflowY: "auto",
+              maxWidth: 480,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: "100%",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                padding: "16px 20px 12px",
+                borderBottom: `1px solid ${T.border}`,
+                background: `linear-gradient(135deg,${T.surface},${T.bg})`,
+                position: "sticky",
+                top: 0,
+                zIndex: 1,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 10,
+                }}
+              >
+                <button
+                  onClick={onClose}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: T.dim,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  ← Back
+                </button>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: T.dim,
+                  }}
+                >
+                  ⚙️ Admin Onboarding
+                </div>
+                <div style={{ width: 40 }} />
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {ADMIN_TABS.map((t) => {
+                  const active = tab === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      onClick={() => setTab(t.key)}
+                      style={{
+                        flex: 1,
+                        padding: "10px 8px",
+                        borderRadius: 10,
+                        border: `1px solid ${active ? T.accent : T.border}`,
+                        background: active ? T.accentDim : "transparent",
+                        color: active ? T.accent : T.dim,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        letterSpacing: "0.04em",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ padding: 16, flex: 1 }}>
+              {tab === "locations" && (
+                <AdminLocationsTab profile={profile} onChanged={onRefresh} />
+              )}
+              {tab === "people" && (
+                <AdminPlaceholderTab label="People (Phase 9B)" />
+              )}
+              {tab === "health" && (
+                <AdminPlaceholderTab label="Health (Phase 9C)" />
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      function AdminPlaceholderTab({ label }) {
+        return (
+          <div
+            style={{
+              padding: 30,
+              textAlign: "center",
+              color: T.muted,
+              fontSize: 13,
+              lineHeight: 1.6,
+              background: T.card,
+              border: `1px solid ${T.border}`,
+              borderRadius: 14,
+            }}
+          >
+            {label} — coming next.
+          </div>
+        );
+      }
+
+      function AdminLocationsTab({ profile, onChanged }) {
+        const [locations, setLocations] = useState([]);
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState(null);
+        const [syncingIds, setSyncingIds] = useState({});
+        const [addOpen, setAddOpen] = useState(false);
+        const [editLocation, setEditLocation] = useState(null);
+        const [stagesLocation, setStagesLocation] = useState(null);
+
+        const load = useCallback(async () => {
+          setLoading(true);
+          setError(null);
+          try {
+            const { data, error: err } = await window.supabase
+              .from("locations")
+              .select("*")
+              .order("name");
+            if (err) throw err;
+            setLocations(data || []);
+          } catch (e) {
+            setError(e && e.message ? e.message : "Failed to load locations");
+          } finally {
+            setLoading(false);
+          }
+        }, []);
+
+        useEffect(() => {
+          load();
+        }, [load]);
+
+        const triggerSync = async (loc) => {
+          setSyncingIds((s) => ({ ...s, [loc.ghl_location_id]: true }));
+          try {
+            await callEdgeFunction("sync-ghl-to-cache", {
+              ghl_location_id: loc.ghl_location_id,
+            });
+            await load();
+            if (onChanged) onChanged();
+          } catch (e) {
+            alert(`Sync failed: ${e.message || e}`);
+          } finally {
+            setSyncingIds((s) => ({ ...s, [loc.ghl_location_id]: false }));
+          }
+        };
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 800,
+                  color: T.white,
+                  fontFamily: "'Outfit',sans-serif",
+                }}
+              >
+                Locations
+              </div>
+              <button
+                onClick={() => setAddOpen(true)}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${T.accent}44`,
+                  background: T.accentDim,
+                  color: T.accent,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                + Add Location
+              </button>
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  background: T.redDim,
+                  border: `1px solid ${T.red}33`,
+                  color: T.red,
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            {loading && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                {[0, 1].map((i) => (
+                  <div
+                    key={`skel-${i}`}
+                    style={{
+                      padding: 14,
+                      background: T.card,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 12,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                    }}
+                  >
+                    <SkelBar w={160} h={14} />
+                    <SkelBar w={220} h={10} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!loading && locations.length === 0 && !error && (
+              <div
+                style={{
+                  padding: 24,
+                  background: T.card,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 14,
+                  textAlign: "center",
+                  color: T.muted,
+                  fontSize: 13,
+                }}
+              >
+                No locations yet. Tap <strong>+ Add Location</strong> to onboard
+                the first one.
+              </div>
+            )}
+
+            {!loading &&
+              locations.map((loc) => {
+                const syncing = !!syncingIds[loc.ghl_location_id];
+                const hasApiKey = !!loc.ghl_api_key;
+                const hasCalendar = !!loc.ghl_calendar_id;
+                const hasPipeline = !!loc.pipeline_id;
+                return (
+                  <div
+                    key={loc.id}
+                    style={{
+                      padding: 16,
+                      background: T.card,
+                      border: `1px solid ${T.border}`,
+                      borderLeft: `4px solid ${loc.active ? T.accent : T.muted}`,
+                      borderRadius: 12,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 800,
+                          color: T.white,
+                          fontFamily: "'Outfit',sans-serif",
+                        }}
+                      >
+                        {loc.name}
+                      </div>
+                      <div style={{ fontSize: 11, color: T.dim, marginTop: 2 }}>
+                        {loc.ghl_location_id}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 6,
+                      }}
+                    >
+                      <StatusPillMini
+                        label="API key"
+                        ok={hasApiKey}
+                        okText={`…${(loc.ghl_api_key || "").slice(-4)}`}
+                      />
+                      <StatusPillMini
+                        label="Calendar"
+                        ok={hasCalendar}
+                        okText="set"
+                      />
+                      <StatusPillMini
+                        label="Pipeline"
+                        ok={hasPipeline}
+                        okText="set"
+                      />
+                      <StatusPillMini
+                        label="Active"
+                        ok={loc.active}
+                        okText="yes"
+                      />
+                    </div>
+                    {loc.last_synced_at && (
+                      <div style={{ fontSize: 11, color: T.muted }}>
+                        Last synced{" "}
+                        {new Date(loc.last_synced_at).toLocaleString()}
+                      </div>
+                    )}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 6,
+                        marginTop: 4,
+                      }}
+                    >
+                      <AdminBtn onClick={() => setEditLocation(loc)}>
+                        Edit
+                      </AdminBtn>
+                      <AdminBtn
+                        onClick={() => triggerSync(loc)}
+                        disabled={syncing || !hasApiKey}
+                        title={!hasApiKey ? "Add API key first" : ""}
+                      >
+                        {syncing ? "↻ Syncing…" : "↻ Sync"}
+                      </AdminBtn>
+                      <AdminBtn
+                        onClick={() => setStagesLocation(loc)}
+                        disabled={!hasPipeline}
+                        title={
+                          !hasPipeline ? "Sync first to discover pipeline" : ""
+                        }
+                      >
+                        Stages
+                      </AdminBtn>
+                    </div>
+                  </div>
+                );
+              })}
+
+            {addOpen && (
+              <AddEditLocationModal
+                mode="create"
+                onClose={() => setAddOpen(false)}
+                onSaved={async () => {
+                  setAddOpen(false);
+                  await load();
+                  if (onChanged) onChanged();
+                }}
+              />
+            )}
+            {editLocation && (
+              <AddEditLocationModal
+                mode="edit"
+                location={editLocation}
+                onClose={() => setEditLocation(null)}
+                onSaved={async () => {
+                  setEditLocation(null);
+                  await load();
+                  if (onChanged) onChanged();
+                }}
+              />
+            )}
+            {stagesLocation && (
+              <StagesEditorModal
+                location={stagesLocation}
+                onClose={() => setStagesLocation(null)}
+              />
+            )}
+          </div>
+        );
+      }
+
+      function StatusPillMini({ label, ok, okText }) {
+        return (
+          <span
+            style={{
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.03em",
+              background: ok ? T.accentDim : T.redDim,
+              color: ok ? T.accent : T.red,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            {label}: {ok ? okText : "missing"}
+          </span>
+        );
+      }
+
+      function AdminBtn({ children, onClick, disabled, title }) {
+        return (
+          <button
+            onClick={onClick}
+            disabled={disabled}
+            title={title}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: `1px solid ${disabled ? T.border : T.accent + "44"}`,
+              background: disabled ? "transparent" : T.accentDim,
+              color: disabled ? T.muted : T.accent,
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: disabled ? "not-allowed" : "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {children}
+          </button>
+        );
+      }
+
+      function AddEditLocationModal({ mode, location, onClose, onSaved }) {
+        const isEdit = mode === "edit";
+        const [name, setName] = useState(location?.name || "");
+        const [ghlLocationId, setGhlLocationId] = useState(
+          location?.ghl_location_id || "",
+        );
+        const [ghlApiKey, setGhlApiKey] = useState(location?.ghl_api_key || "");
+        const [ghlCalendarId, setGhlCalendarId] = useState(
+          location?.ghl_calendar_id || "",
+        );
+        const [timezone, setTimezone] = useState(
+          location?.timezone || "America/Chicago",
+        );
+        const [phone, setPhone] = useState(location?.phone || "");
+        const [active, setActive] = useState(location?.active !== false);
+        const [submitting, setSubmitting] = useState(false);
+        const [error, setError] = useState(null);
+
+        const canSubmit = name.trim() && ghlLocationId.trim() && !submitting;
+
+        const submit = async () => {
+          setSubmitting(true);
+          setError(null);
+          try {
+            if (isEdit) {
+              // Only include fields the admin actually changed. Blank optional
+              // fields are treated as "keep existing" — sending an empty string
+              // would NOT wipe the server value (the function strips empties),
+              // but omitting them keeps the payload clean.
+              const updates = { name: name.trim(), active };
+              const maybe = {
+                ghl_api_key: ghlApiKey.trim(),
+                ghl_calendar_id: ghlCalendarId.trim(),
+                timezone: timezone.trim(),
+                phone: phone.trim(),
+              };
+              for (const [k, v] of Object.entries(maybe)) {
+                if (v) updates[k] = v;
+              }
+              await callEdgeFunction("admin-update-location", {
+                ghl_location_id: ghlLocationId.trim(),
+                updates,
+              });
+            } else {
+              await callEdgeFunction("admin-create-location", {
+                ghl_location_id: ghlLocationId.trim(),
+                name: name.trim(),
+                ghl_api_key: ghlApiKey.trim() || undefined,
+                ghl_calendar_id: ghlCalendarId.trim() || undefined,
+                timezone: timezone.trim() || undefined,
+                phone: phone.trim() || undefined,
+                active,
+              });
+            }
+            onSaved();
+          } catch (e) {
+            setError(e && e.message ? e.message : "Save failed");
+            setSubmitting(false);
+          }
+        };
+
+        const fieldLabel = {
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: T.dim,
+        };
+        const fieldInput = {
+          padding: "12px 14px",
+          borderRadius: 10,
+          border: `1px solid ${T.border}`,
+          background: T.card,
+          color: T.text,
+          fontSize: 14,
+          outline: "none",
+          fontFamily: "inherit",
+          width: "100%",
+          boxSizing: "border-box",
+        };
+
+        return (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 330,
+              background: "rgba(0,0,0,0.75)",
+              backdropFilter: "blur(6px)",
+              WebkitBackdropFilter: "blur(6px)",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+              padding: "20px 16px",
+            }}
+          >
+            <div
+              className="fade-in"
+              style={{
+                width: "100%",
+                maxWidth: 448,
+                background: T.surface,
+                border: `1px solid ${T.border}`,
+                borderRadius: 18,
+                padding: 20,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                maxHeight: "92vh",
+                overflowY: "auto",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 800,
+                    color: T.white,
+                    fontFamily: "'Outfit',sans-serif",
+                  }}
+                >
+                  {isEdit ? "Edit Location" : "Add Location"}
+                </div>
+                <button
+                  onClick={onClose}
+                  disabled={submitting}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: T.dim,
+                    fontSize: 22,
+                    cursor: submitting ? "not-allowed" : "pointer",
+                    padding: 0,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div>
+                <label style={fieldLabel}>Name</label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Aira Fitness ..."
+                  style={{ ...fieldInput, marginTop: 6 }}
+                />
+              </div>
+              <div>
+                <label style={fieldLabel}>GHL Location ID</label>
+                <input
+                  value={ghlLocationId}
+                  onChange={(e) => setGhlLocationId(e.target.value)}
+                  placeholder="ksTER6vcHvi08UdPCVxc"
+                  disabled={isEdit}
+                  style={{
+                    ...fieldInput,
+                    marginTop: 6,
+                    opacity: isEdit ? 0.6 : 1,
+                  }}
+                />
+              </div>
+              <div>
+                <label style={fieldLabel}>GHL API Key (PIT)</label>
+                <input
+                  value={ghlApiKey}
+                  onChange={(e) => setGhlApiKey(e.target.value)}
+                  placeholder="pit-..."
+                  style={{
+                    ...fieldInput,
+                    marginTop: 6,
+                    fontFamily: "monospace",
+                  }}
+                />
+              </div>
+              <div>
+                <label style={fieldLabel}>GHL Calendar ID</label>
+                <input
+                  value={ghlCalendarId}
+                  onChange={(e) => setGhlCalendarId(e.target.value)}
+                  placeholder="e5CB1cSvhcY6dlWEUUjI"
+                  style={{
+                    ...fieldInput,
+                    marginTop: 6,
+                    fontFamily: "monospace",
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={fieldLabel}>Timezone</label>
+                  <input
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    placeholder="America/Chicago"
+                    style={{ ...fieldInput, marginTop: 6 }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={fieldLabel}>Phone</label>
+                  <input
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="(815) 555-0100"
+                    style={{ ...fieldInput, marginTop: 6 }}
+                  />
+                </div>
+              </div>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  color: T.text,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={(e) => setActive(e.target.checked)}
+                />
+                Active (included in syncs and dashboards)
+              </label>
+
+              {error && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: T.redDim,
+                    border: `1px solid ${T.red}33`,
+                    color: T.red,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <button
+                  onClick={onClose}
+                  disabled={submitting}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    borderRadius: 10,
+                    border: `1px solid ${T.border}`,
+                    background: "transparent",
+                    color: T.text,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: submitting ? "not-allowed" : "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submit}
+                  disabled={!canSubmit}
+                  style={{
+                    flex: 2,
+                    padding: "12px",
+                    borderRadius: 10,
+                    border: "none",
+                    background: canSubmit
+                      ? `linear-gradient(135deg,${T.accent},${T.blue})`
+                      : T.muted,
+                    color: T.bg,
+                    fontSize: 14,
+                    fontWeight: 800,
+                    letterSpacing: "0.04em",
+                    cursor: canSubmit ? "pointer" : "not-allowed",
+                    fontFamily: "'Outfit',sans-serif",
+                  }}
+                >
+                  {submitting
+                    ? "Saving…"
+                    : isEdit
+                      ? "Save Changes"
+                      : "Add Location"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function StagesEditorModal({ location, onClose }) {
+        const [stages, setStages] = useState([]);
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState(null);
+        const [saving, setSaving] = useState({});
+
+        const load = useCallback(async () => {
+          setLoading(true);
+          setError(null);
+          try {
+            const { data, error: err } = await window.supabase
+              .from("pipeline_stages")
+              .select(
+                "id, ghl_stage_id, name, position, counts_as_show, counts_as_no_show, counts_as_sale",
+              )
+              .eq("ghl_location_id", location.ghl_location_id)
+              .order("position", { ascending: true, nullsFirst: false });
+            if (err) throw err;
+            setStages(data || []);
+          } catch (e) {
+            setError(e && e.message ? e.message : "Failed to load stages");
+          } finally {
+            setLoading(false);
+          }
+        }, [location.ghl_location_id]);
+
+        useEffect(() => {
+          load();
+        }, [load]);
+
+        const updateFlag = async (stage, field, value) => {
+          setSaving((s) => ({ ...s, [stage.id]: true }));
+          try {
+            const { error: err } = await window.supabase
+              .from("pipeline_stages")
+              .update({ [field]: value, updated_at: new Date().toISOString() })
+              .eq("id", stage.id);
+            if (err) throw err;
+            setStages((prev) =>
+              prev.map((s) =>
+                s.id === stage.id ? { ...s, [field]: value } : s,
+              ),
+            );
+          } catch (e) {
+            alert(`Save failed: ${e.message || e}`);
+          } finally {
+            setSaving((s) => ({ ...s, [stage.id]: false }));
+          }
+        };
+
+        return (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 330,
+              background: "rgba(0,0,0,0.75)",
+              backdropFilter: "blur(6px)",
+              WebkitBackdropFilter: "blur(6px)",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+              padding: "20px 16px",
+            }}
+          >
+            <div
+              className="fade-in"
+              style={{
+                width: "100%",
+                maxWidth: 480,
+                background: T.surface,
+                border: `1px solid ${T.border}`,
+                borderRadius: 18,
+                padding: 20,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                maxHeight: "92vh",
+                overflowY: "auto",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 800,
+                      color: T.white,
+                      fontFamily: "'Outfit',sans-serif",
+                    }}
+                  >
+                    Pipeline Stages
+                  </div>
+                  <div style={{ fontSize: 11, color: T.dim, marginTop: 2 }}>
+                    {location.name}
+                  </div>
+                </div>
+                <button
+                  onClick={onClose}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: T.dim,
+                    fontSize: 22,
+                    cursor: "pointer",
+                    padding: 0,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.4 }}>
+                These flags control how opportunities in each stage roll up into
+                dashboard KPIs. Changes take effect immediately.
+              </div>
+
+              {error && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: T.redDim,
+                    border: `1px solid ${T.red}33`,
+                    color: T.red,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              {loading && (
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                >
+                  {[0, 1, 2].map((i) => (
+                    <SkelBar key={`skel-${i}`} w={"100%"} h={40} />
+                  ))}
+                </div>
+              )}
+
+              {!loading && stages.length === 0 && !error && (
+                <div
+                  style={{
+                    padding: 18,
+                    background: T.card,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 10,
+                    textAlign: "center",
+                    color: T.muted,
+                    fontSize: 12,
+                  }}
+                >
+                  No pipeline stages cached yet. Sync this location to
+                  auto-discover its pipeline.
+                </div>
+              )}
+
+              {!loading &&
+                stages.map((s) => (
+                  <div
+                    key={s.id}
+                    style={{
+                      padding: "10px 12px",
+                      background: T.card,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 10,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      opacity: saving[s.id] ? 0.55 : 1,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: T.white,
+                        }}
+                      >
+                        {s.name}
+                      </div>
+                      {typeof s.position === "number" && (
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: T.muted,
+                          }}
+                        >
+                          pos {s.position}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <FlagToggle
+                        label="Show"
+                        checked={!!s.counts_as_show}
+                        onChange={(v) => updateFlag(s, "counts_as_show", v)}
+                      />
+                      <FlagToggle
+                        label="No Show"
+                        checked={!!s.counts_as_no_show}
+                        onChange={(v) => updateFlag(s, "counts_as_no_show", v)}
+                      />
+                      <FlagToggle
+                        label="Sale"
+                        checked={!!s.counts_as_sale}
+                        onChange={(v) => updateFlag(s, "counts_as_sale", v)}
+                      />
+                    </div>
+                  </div>
+                ))}
+
+              <button
+                onClick={onClose}
+                style={{
+                  marginTop: 4,
+                  padding: "12px",
+                  borderRadius: 10,
+                  border: `1px solid ${T.border}`,
+                  background: "transparent",
+                  color: T.text,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function FlagToggle({ label, checked, onChange }) {
+        return (
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: `1px solid ${checked ? T.accent + "44" : T.border}`,
+              background: checked ? T.accentDim : "transparent",
+              color: checked ? T.accent : T.dim,
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={(e) => onChange(e.target.checked)}
+              style={{ accentColor: T.accent }}
+            />
+            {label}
+          </label>
+        );
+      }
+
       // ── Authenticated App ──
       function AuthenticatedApp({
         profile,
@@ -5668,6 +6737,7 @@
         const [screen, setScreen] = useState("dashboard");
         const [selectedLead, setSelectedLead] = useState(null);
         const [settingsOpen, setSettingsOpen] = useState(false);
+        const [adminOpen, setAdminOpen] = useState(false);
         const [pickerOpen, setPickerOpen] = useState(false);
         const [viewMode, setViewModeState] = useState(() => {
           if (accessibleLocations.length <= 1) return "location";
@@ -6276,6 +7346,18 @@
                 profile={profile}
                 onClose={() => setSettingsOpen(false)}
                 onLogout={onLogout}
+                onOpenAdmin={() => {
+                  setSettingsOpen(false);
+                  setAdminOpen(true);
+                }}
+              />
+            )}
+
+            {adminOpen && profile.role === "admin" && (
+              <AdminOnboardingOverlay
+                profile={profile}
+                onClose={() => setAdminOpen(false)}
+                onRefresh={bumpCallLogVersion}
               />
             )}
 

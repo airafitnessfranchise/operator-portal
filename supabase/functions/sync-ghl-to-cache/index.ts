@@ -346,6 +346,53 @@ async function ensurePipeline(
   return { pipelineId, stagesDiscovered: stages.length };
 }
 
+async function syncGhlStaff(
+  supabase: SupabaseClient,
+  apiKey: string,
+  locationId: string,
+  warnings: string[],
+): Promise<number> {
+  // GHL /users/?locationId=X requires Version 2021-07-28 (Probe 2 confirmed)
+  const data = await ghlFetch(
+    `/users/?locationId=${encodeURIComponent(locationId)}`,
+    apiKey,
+    { headers: { Version: "2021-07-28" } },
+  );
+  const users: any[] = data.users || [];
+  if (users.length === 0) {
+    warnings.push(`ghl_staff: 0 users returned for ${locationId}`);
+    return 0;
+  }
+
+  const rows = users
+    .filter((u) => u && u.id && !u.deleted)
+    .map((u) => {
+      const fullName =
+        u.name ||
+        [u.firstName, u.lastName].filter(Boolean).join(" ").trim() ||
+        null;
+      const role = (u.roles && (u.roles.role || u.roles.type)) || null;
+      return {
+        ghl_location_id: locationId,
+        ghl_user_id: u.id,
+        email: u.email || null,
+        first_name: u.firstName || null,
+        last_name: u.lastName || null,
+        full_name: fullName,
+        role,
+        synced_at: new Date().toISOString(),
+      };
+    });
+
+  if (rows.length === 0) return 0;
+
+  const { error } = await supabase
+    .from("ghl_staff")
+    .upsert(rows, { onConflict: "ghl_location_id,ghl_user_id" });
+  if (error) throw new Error(`ghl_staff upsert failed: ${error.message}`);
+  return rows.length;
+}
+
 async function syncOneLocation(
   supabase: SupabaseClient,
   ghlLocationId: string,
@@ -416,11 +463,19 @@ async function syncOneLocation(
       ghlCalendarId,
       warnings,
     );
+    await sleep(REQUEST_DELAY_MS);
+    const staff = await syncGhlStaff(
+      supabase,
+      ghlApiKey,
+      ghlLocationId,
+      warnings,
+    );
 
     const counts = {
       contacts,
       opportunities,
       appointments,
+      staff,
       stages_discovered: stagesDiscovered,
     };
 
