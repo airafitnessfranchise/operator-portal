@@ -4550,57 +4550,20 @@
         ];
 
         return (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 300,
-              background: "rgba(0,0,0,0.75)",
-              backdropFilter: "blur(6px)",
-              WebkitBackdropFilter: "blur(6px)",
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "center",
-              padding: "20px 16px",
-            }}
-          >
-            <div
-              className="fade-in"
-              style={{
-                width: "100%",
-                maxWidth: 448,
-                background: T.surface,
-                border: `1px solid ${T.border}`,
-                borderRadius: 18,
-                padding: 20,
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                maxHeight: "90vh",
-                overflowY: "auto",
-              }}
-            >
+          <div style={{ ...MODAL_BACKDROP, zIndex: 300 }}>
+            <div className="fade-in" style={MODAL_CARD}>
               <div
                 style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
+                  fontSize: 10,
+                  fontWeight: 500,
+                  letterSpacing: "0.12em",
                   textTransform: "uppercase",
-                  color: T.dim,
+                  color: T.textMuted,
                 }}
               >
                 Log your call
               </div>
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 800,
-                  color: T.white,
-                  fontFamily: "'Outfit',sans-serif",
-                  lineHeight: 1.3,
-                  marginBottom: 4,
-                }}
-              >
+              <div style={{ ...MODAL_TITLE, lineHeight: 1.3 }}>
                 How'd your call with {pending.contactName} go?
               </div>
               {outcomes.map((o) => (
@@ -4608,20 +4571,16 @@
                   key={o.key}
                   onClick={() => submit(o.key)}
                   disabled={submitting}
+                  className="btn-secondary"
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
                     padding: "14px 16px",
-                    borderRadius: 12,
-                    border: `1px solid ${T.border}`,
-                    background: T.card,
-                    color: T.text,
                     fontSize: 14,
-                    fontWeight: 600,
-                    cursor: submitting ? "not-allowed" : "pointer",
                     textAlign: "left",
-                    fontFamily: "inherit",
+                    justifyContent: "flex-start",
+                    cursor: submitting ? "not-allowed" : "pointer",
                     opacity: submitting ? 0.6 : 1,
                   }}
                 >
@@ -4638,28 +4597,14 @@
                   marginTop: 4,
                   padding: "12px 14px",
                   borderRadius: 10,
-                  border: `1px solid ${T.border}`,
-                  background: T.card,
+                  border: `0.5px solid ${T.border}`,
+                  background: T.surface,
                   color: T.text,
                   fontSize: 13,
                   outline: "none",
                 }}
               />
-              {error && (
-                <div
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    background: T.redDim,
-                    border: `1px solid ${T.red}33`,
-                    color: T.red,
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
-                  {error}
-                </div>
-              )}
+              {error && <ModalErrorBanner message={error} />}
             </div>
           </div>
         );
@@ -4877,16 +4822,16 @@
 
         const fieldLabel = {
           fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: "0.1em",
+          fontWeight: 500,
+          letterSpacing: "0.12em",
           textTransform: "uppercase",
-          color: T.dim,
+          color: T.textMuted,
         };
         const fieldInput = {
           padding: "12px 14px",
           borderRadius: 10,
-          border: `1px solid ${T.border}`,
-          background: T.card,
+          border: `0.5px solid ${T.border}`,
+          background: T.surface,
           color: T.text,
           fontSize: 14,
           outline: "none",
@@ -4903,36 +4848,8 @@
         })();
 
         return (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 310,
-              background: "rgba(0,0,0,0.75)",
-              backdropFilter: "blur(6px)",
-              WebkitBackdropFilter: "blur(6px)",
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "center",
-              padding: "20px 16px",
-            }}
-          >
-            <div
-              className="fade-in"
-              style={{
-                width: "100%",
-                maxWidth: 448,
-                background: T.surface,
-                border: `1px solid ${T.border}`,
-                borderRadius: 18,
-                padding: 20,
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-                maxHeight: "92vh",
-                overflowY: "auto",
-              }}
-            >
+          <div style={{ ...MODAL_BACKDROP, zIndex: 310 }}>
+            <div className="fade-in" style={MODAL_CARD}>
               <div
                 style={{
                   display: "flex",
@@ -4940,33 +4857,16 @@
                   alignItems: "center",
                 }}
               >
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: T.white,
-                    fontFamily: "'Outfit',sans-serif",
-                  }}
-                >
-                  Book Appointment
-                </div>
+                <div style={MODAL_TITLE}>Book Appointment</div>
                 <button
                   onClick={onClose}
                   disabled={submitting}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: T.dim,
-                    fontSize: 22,
-                    cursor: submitting ? "not-allowed" : "pointer",
-                    padding: 0,
-                    lineHeight: 1,
-                  }}
+                  style={MODAL_CLOSE(submitting)}
                 >
                   ×
                 </button>
               </div>
-              <div style={{ fontSize: 11, color: T.dim, marginTop: -6 }}>
+              <div style={{ fontSize: 11, color: T.textMuted, marginTop: -6 }}>
                 {locationName}
               </div>
 
@@ -4978,8 +4878,7 @@
                       marginTop: 6,
                       padding: "10px 14px",
                       borderRadius: 10,
-                      border: `1px solid ${T.accent}33`,
-                      background: T.accentDim,
+                      background: T.airaBlueDim,
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
@@ -4990,8 +4889,8 @@
                       <div
                         style={{
                           fontSize: 14,
-                          fontWeight: 700,
-                          color: T.white,
+                          fontWeight: 500,
+                          color: T.textHi,
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
@@ -5000,7 +4899,7 @@
                         {contact.full_name || "—"}
                       </div>
                       {contact.phone && (
-                        <div style={{ fontSize: 11, color: T.dim }}>
+                        <div style={{ fontSize: 11, color: T.textMuted }}>
                           {contact.phone}
                         </div>
                       )}
@@ -5012,14 +4911,10 @@
                         setResults([]);
                       }}
                       disabled={submitting}
+                      className="btn-ghost"
                       style={{
-                        background: "transparent",
-                        border: "none",
-                        color: T.dim,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer",
                         padding: "4px 8px",
+                        fontSize: 12,
                       }}
                     >
                       change
@@ -5038,7 +4933,7 @@
                       <div
                         style={{
                           fontSize: 11,
-                          color: T.dim,
+                          color: T.textMuted,
                           marginTop: 6,
                         }}
                       >
@@ -5051,7 +4946,7 @@
                         <div
                           style={{
                             fontSize: 11,
-                            color: T.muted,
+                            color: T.textDim,
                             marginTop: 6,
                           }}
                         >
@@ -5064,11 +4959,12 @@
                           marginTop: 6,
                           maxHeight: 200,
                           overflowY: "auto",
-                          border: `1px solid ${T.border}`,
+                          border: `0.5px solid ${T.border}`,
                           borderRadius: 10,
+                          background: T.surface,
                         }}
                       >
-                        {results.map((r) => (
+                        {results.map((r, i) => (
                           <button
                             key={r.ghl_contact_id}
                             onClick={() => {
@@ -5081,17 +4977,27 @@
                               padding: "10px 12px",
                               background: "transparent",
                               border: "none",
-                              borderBottom: `1px solid ${T.border}`,
+                              borderBottom:
+                                i < results.length - 1
+                                  ? `0.5px solid ${T.border}`
+                                  : "none",
                               color: T.text,
                               cursor: "pointer",
                               fontFamily: "inherit",
                             }}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.background =
+                                T.surfaceHover)
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.background = "transparent")
+                            }
                           >
                             <div
                               style={{
                                 fontSize: 13,
-                                fontWeight: 700,
-                                color: T.white,
+                                fontWeight: 500,
+                                color: T.textHi,
                               }}
                             >
                               {r.full_name || "—"}
@@ -5100,7 +5006,8 @@
                               <div
                                 style={{
                                   fontSize: 11,
-                                  color: T.dim,
+                                  color: T.textMuted,
+                                  marginTop: 2,
                                 }}
                               >
                                 {r.phone}
@@ -5178,58 +5085,23 @@
               )}
 
               {error && (
-                <div
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    background: T.redDim,
-                    border: `1px solid ${T.red}33`,
-                    color: T.red,
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
-                  Couldn't book — {error}
-                </div>
+                <ModalErrorBanner message={`Couldn't book — ${error}`} />
               )}
 
               <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                 <button
                   onClick={onClose}
                   disabled={submitting}
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    borderRadius: 10,
-                    border: `1px solid ${T.border}`,
-                    background: "transparent",
-                    color: T.text,
-                    fontSize: 13,
-                    fontWeight: 700,
-                    cursor: submitting ? "not-allowed" : "pointer",
-                    fontFamily: "inherit",
-                  }}
+                  className="btn-secondary"
+                  style={{ flex: 1, padding: "12px" }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={submit}
                   disabled={!canSubmit}
-                  style={{
-                    flex: 2,
-                    padding: "12px",
-                    borderRadius: 10,
-                    border: "none",
-                    background: canSubmit
-                      ? `linear-gradient(135deg,${T.accent},${T.blue})`
-                      : T.muted,
-                    color: T.bg,
-                    fontSize: 14,
-                    fontWeight: 800,
-                    letterSpacing: "0.04em",
-                    cursor: canSubmit ? "pointer" : "not-allowed",
-                    fontFamily: "'Outfit',sans-serif",
-                  }}
+                  className="btn-primary"
+                  style={{ flex: 2, padding: "12px" }}
                 >
                   {submitting ? "Booking…" : "Book Appointment"}
                 </button>
@@ -8512,37 +8384,42 @@
           }
         };
 
+        const pillStyle = (active) => ({
+          padding: "8px 12px",
+          borderRadius: 999,
+          border: `0.5px solid ${active ? T.airaBlue : T.border}`,
+          background: active ? T.airaBlueDim : T.surface,
+          color: active ? T.airaBlueDark : T.text,
+          fontSize: 12,
+          fontWeight: 500,
+          cursor: "pointer",
+          fontFamily: "inherit",
+          transition: "all 160ms ease",
+        });
+        const inputStyle = {
+          marginTop: 6,
+          padding: "12px 14px",
+          borderRadius: 10,
+          border: `0.5px solid ${T.border}`,
+          background: T.surface,
+          color: T.text,
+          fontSize: 14,
+          outline: "none",
+          fontFamily: "inherit",
+          width: "100%",
+          boxSizing: "border-box",
+        };
+        const smallLabel = {
+          fontSize: 10,
+          fontWeight: 500,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: T.textMuted,
+        };
+
         return (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 340,
-              background: "rgba(0,0,0,0.75)",
-              backdropFilter: "blur(6px)",
-              WebkitBackdropFilter: "blur(6px)",
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "center",
-              padding: "20px 16px",
-            }}
-          >
-            <div
-              className="fade-in"
-              style={{
-                width: "100%",
-                maxWidth: 448,
-                background: T.surface,
-                border: `1px solid ${T.border}`,
-                borderRadius: 18,
-                padding: 20,
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-                maxHeight: "92vh",
-                overflowY: "auto",
-              }}
-            >
+          <div style={{ ...MODAL_BACKDROP, zIndex: 340 }}>
+            <div className="fade-in" style={MODAL_CARD}>
               <div
                 style={{
                   display: "flex",
@@ -8551,18 +8428,15 @@
                 }}
               >
                 <div>
-                  <div
-                    style={{
-                      fontSize: 18,
-                      fontWeight: 800,
-                      color: T.white,
-                      fontFamily: "'Outfit',sans-serif",
-                    }}
-                  >
-                    📣 I coached this today
-                  </div>
+                  <div style={MODAL_TITLE}>I coached this today</div>
                   {locationName && (
-                    <div style={{ fontSize: 11, color: T.dim, marginTop: 2 }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: T.textMuted,
+                        marginTop: 3,
+                      }}
+                    >
                       {locationName}
                     </div>
                   )}
@@ -8570,31 +8444,14 @@
                 <button
                   onClick={onClose}
                   disabled={submitting}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: T.dim,
-                    fontSize: 22,
-                    cursor: submitting ? "not-allowed" : "pointer",
-                    padding: 0,
-                    lineHeight: 1,
-                  }}
+                  style={MODAL_CLOSE(submitting)}
                 >
                   ×
                 </button>
               </div>
 
               <div>
-                <div
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase",
-                    color: T.dim,
-                    marginBottom: 8,
-                  }}
-                >
+                <div style={{ ...smallLabel, marginBottom: 8 }}>
                   What did you coach on?
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -8604,17 +8461,7 @@
                       <button
                         key={m.value}
                         onClick={() => setMetric(m.value)}
-                        style={{
-                          padding: "8px 12px",
-                          borderRadius: 999,
-                          border: `1px solid ${active ? T.accent + "44" : T.border}`,
-                          background: active ? T.accentDim : "transparent",
-                          color: active ? T.accent : T.dim,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                        }}
+                        style={pillStyle(active)}
                       >
                         {m.label}
                       </button>
@@ -8624,52 +8471,22 @@
               </div>
 
               <div>
-                <label
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase",
-                    color: T.dim,
-                  }}
-                >
-                  Who did you talk to?
-                </label>
+                <label style={smallLabel}>Who did you talk to?</label>
                 <input
                   value={franchiseeName}
                   onChange={(e) => setFranchiseeName(e.target.value)}
                   placeholder="Franchisee name"
-                  style={{
-                    marginTop: 6,
-                    padding: "12px 14px",
-                    borderRadius: 10,
-                    border: `1px solid ${T.border}`,
-                    background: T.card,
-                    color: T.text,
-                    fontSize: 14,
-                    outline: "none",
-                    fontFamily: "inherit",
-                    width: "100%",
-                    boxSizing: "border-box",
-                  }}
+                  style={inputStyle}
                 />
               </div>
 
               <div>
-                <label
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase",
-                    color: T.dim,
-                  }}
-                >
+                <label style={smallLabel}>
                   Quick note{" "}
                   <span
                     style={{
-                      color: T.muted,
-                      fontWeight: 500,
+                      color: T.textDim,
+                      fontWeight: 400,
                       textTransform: "none",
                       letterSpacing: 0,
                     }}
@@ -8682,24 +8499,12 @@
                   onChange={(e) => setNote(e.target.value.slice(0, 140))}
                   placeholder="Deaf Ear pass, PIF ask on next 5…"
                   maxLength={140}
-                  style={{
-                    marginTop: 6,
-                    padding: "12px 14px",
-                    borderRadius: 10,
-                    border: `1px solid ${T.border}`,
-                    background: T.card,
-                    color: T.text,
-                    fontSize: 14,
-                    outline: "none",
-                    fontFamily: "inherit",
-                    width: "100%",
-                    boxSizing: "border-box",
-                  }}
+                  style={inputStyle}
                 />
                 <div
                   style={{
                     fontSize: 10,
-                    color: T.muted,
+                    color: T.textDim,
                     marginTop: 4,
                     textAlign: "right",
                   }}
@@ -8708,61 +8513,22 @@
                 </div>
               </div>
 
-              {error && (
-                <div
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    background: T.redDim,
-                    border: `1px solid ${T.red}33`,
-                    color: T.red,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    lineHeight: 1.4,
-                  }}
-                >
-                  {error}
-                </div>
-              )}
+              {error && <ModalErrorBanner message={error} />}
 
               <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                 <button
                   onClick={onClose}
                   disabled={submitting}
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    borderRadius: 10,
-                    border: `1px solid ${T.border}`,
-                    background: "transparent",
-                    color: T.text,
-                    fontSize: 13,
-                    fontWeight: 700,
-                    cursor: submitting ? "not-allowed" : "pointer",
-                    fontFamily: "inherit",
-                  }}
+                  className="btn-secondary"
+                  style={{ flex: 1, padding: "12px" }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={submit}
                   disabled={submitting || !metric}
-                  style={{
-                    flex: 2,
-                    padding: "12px",
-                    borderRadius: 10,
-                    border: "none",
-                    background:
-                      submitting || !metric
-                        ? T.muted
-                        : `linear-gradient(135deg,${T.accent},${T.blue})`,
-                    color: T.bg,
-                    fontSize: 14,
-                    fontWeight: 800,
-                    letterSpacing: "0.04em",
-                    cursor: submitting || !metric ? "not-allowed" : "pointer",
-                    fontFamily: "'Outfit',sans-serif",
-                  }}
+                  className="btn-primary"
+                  style={{ flex: 2, padding: "12px" }}
                 >
                   {submitting ? "Logging…" : "Log coaching"}
                 </button>
@@ -8903,21 +8669,10 @@
         if (!canLog) return null;
 
         return (
-          <div style={{ padding: "20px 16px 0" }}>
+          <div style={{ padding: "24px 20px 0" }}>
             {error && (
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  background: T.redDim,
-                  border: `1px solid ${T.red}33`,
-                  color: T.red,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  marginBottom: 10,
-                }}
-              >
-                {error}
+              <div style={{ marginBottom: 10 }}>
+                <ModalErrorBanner message={error} />
               </div>
             )}
             {!loading &&
@@ -8938,40 +8693,36 @@
               })}
             {upcoming.length > 0 && (
               <div
+                className="surface-card"
                 style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  background: T.card,
-                  border: `1px solid ${T.border}`,
-                  color: T.dim,
-                  fontSize: 11,
-                  fontWeight: 600,
+                  padding: "12px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
                   marginBottom: 10,
-                  lineHeight: 1.4,
                 }}
               >
-                🕒 {upcoming.length} coaching session
-                {upcoming.length === 1 ? "" : "s"} awaiting 7-day review.
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: T.textDim,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ color: T.text, fontSize: 13, fontWeight: 500 }}>
+                  {upcoming.length} coaching session
+                  {upcoming.length === 1 ? "" : "s"} awaiting 7-day review.
+                </span>
               </div>
             )}
             <button
+              className="btn-primary"
               onClick={() => openLog()}
-              style={{
-                width: "100%",
-                padding: "14px 18px",
-                borderRadius: 12,
-                border: `1px solid ${T.accent}33`,
-                background: T.accentDim,
-                color: T.accent,
-                fontSize: 14,
-                fontWeight: 800,
-                letterSpacing: "0.02em",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                marginBottom: 4,
-              }}
+              style={{ width: "100%", padding: "14px 18px", marginBottom: 4 }}
             >
-              📣 I coached this today
+              I coached this today
             </button>
             {modalOpen && (
               <LogCoachingModal
@@ -9072,9 +8823,9 @@
           >
             <div
               style={{
-                padding: "16px 20px 12px",
-                borderBottom: `1px solid ${T.border}`,
-                background: `linear-gradient(135deg,${T.surface},${T.bg})`,
+                padding: "14px 20px 12px",
+                borderBottom: `0.5px solid ${T.border}`,
+                background: T.surface,
                 position: "sticky",
                 top: 0,
                 zIndex: 1,
@@ -9085,33 +8836,26 @@
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  marginBottom: 10,
+                  marginBottom: 12,
                 }}
               >
                 <button
+                  className="btn-ghost"
                   onClick={onClose}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: T.dim,
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    padding: 0,
-                  }}
+                  style={{ fontSize: 13, paddingLeft: 0 }}
                 >
                   ← Back
                 </button>
                 <div
                   style={{
                     fontSize: 11,
-                    fontWeight: 700,
+                    fontWeight: 500,
                     letterSpacing: "0.12em",
                     textTransform: "uppercase",
-                    color: T.dim,
+                    color: T.textMuted,
                   }}
                 >
-                  📋 My Coaching
+                  My Coaching
                 </div>
                 <div style={{ width: 40 }} />
               </div>
@@ -9127,16 +8871,16 @@
                       onClick={() => setTab(t.key)}
                       style={{
                         flex: 1,
-                        padding: "10px 8px",
-                        borderRadius: 10,
-                        border: `1px solid ${on ? T.accent : T.border}`,
-                        background: on ? T.accentDim : "transparent",
-                        color: on ? T.accent : T.dim,
+                        padding: "9px 8px",
+                        borderRadius: 999,
+                        border: "none",
+                        background: on ? T.airaBlue : T.airaBlueSubtle,
+                        color: on ? "#ffffff" : T.textMuted,
                         fontSize: 12,
-                        fontWeight: 700,
-                        letterSpacing: "0.04em",
+                        fontWeight: 500,
                         cursor: "pointer",
                         fontFamily: "inherit",
+                        transition: "background 160ms ease",
                       }}
                     >
                       {t.label}
@@ -9156,36 +8900,20 @@
                   ))}
                 </div>
               )}
-              {error && (
-                <div
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    background: T.redDim,
-                    border: `1px solid ${T.red}33`,
-                    color: T.red,
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
-                  {error}
-                </div>
-              )}
+              {error && <ModalErrorBanner message={error} />}
               {!loading && list.length === 0 && (
                 <div
+                  className="surface-card"
                   style={{
                     padding: 24,
-                    background: T.card,
-                    border: `1px solid ${T.border}`,
-                    borderRadius: 14,
                     textAlign: "center",
-                    color: T.muted,
+                    color: T.textMuted,
                     fontSize: 13,
                     lineHeight: 1.5,
                   }}
                 >
                   {tab === "active"
-                    ? "No active coaching sessions. Open a red or yellow location and tap 📣 I coached this today."
+                    ? "No active coaching sessions. Open a red or yellow location and tap the coaching button."
                     : "No reviewed sessions yet."}
                 </div>
               )}
@@ -9206,33 +8934,32 @@
                           onClose();
                         }
                       }}
+                      className="surface-card"
                       style={{
                         padding: 14,
                         marginBottom: 10,
-                        background: style ? style.tint : T.card,
-                        border: `1px solid ${T.border}`,
-                        borderLeft: `4px solid ${style ? style.border : T.borderLight}`,
-                        borderRadius: 12,
+                        borderLeft: `4px solid ${style ? style.border : "transparent"}`,
                         cursor: loc ? "pointer" : "default",
                         display: "flex",
                         flexDirection: "column",
-                        gap: 6,
+                        gap: 8,
                       }}
                     >
                       <div
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
-                          alignItems: "flex-start",
+                          alignItems: "center",
                           gap: 8,
                         }}
                       >
                         <div
                           style={{
                             fontSize: 14,
-                            fontWeight: 800,
-                            color: T.white,
+                            fontWeight: 500,
+                            color: T.textHi,
                             fontFamily: "'Outfit',sans-serif",
+                            letterSpacing: "-0.005em",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
@@ -9242,26 +8969,35 @@
                         </div>
                         <span
                           style={{
-                            padding: "2px 8px",
-                            borderRadius: 5,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
                             fontSize: 10,
-                            fontWeight: 700,
-                            background: style
-                              ? style.border + "22"
-                              : T.muted + "22",
-                            color: style ? style.color : T.dim,
+                            fontWeight: 500,
+                            letterSpacing: "0.12em",
+                            textTransform: "uppercase",
+                            color: T.textMuted,
                             whiteSpace: "nowrap",
                             flexShrink: 0,
                           }}
                         >
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: "50%",
+                              background: style ? style.dot : T.textDim,
+                              flexShrink: 0,
+                            }}
+                          />
                           {result
-                            ? style.headline
+                            ? style.label
                             : tab === "active"
-                              ? "Awaiting review"
-                              : "No result"}
+                              ? "AWAITING REVIEW"
+                              : "NO RESULT"}
                         </span>
                       </div>
-                      <div style={{ fontSize: 11, color: T.dim }}>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>
                         Coached{" "}
                         {COACHING_METRIC_LABEL[s.focus_metric] ||
                           s.focus_metric}{" "}
@@ -9271,9 +9007,9 @@
                       {result && (
                         <div
                           style={{
-                            fontSize: 12,
+                            fontSize: 13,
                             color: T.text,
-                            lineHeight: 1.4,
+                            lineHeight: 1.5,
                           }}
                         >
                           {coachingReviewBody(result)}
@@ -9282,9 +9018,11 @@
                       {s.note && (
                         <div
                           style={{
-                            fontSize: 11,
-                            color: T.muted,
-                            fontStyle: "italic",
+                            fontSize: 12,
+                            color: T.textMuted,
+                            borderLeft: `2px solid ${T.border}`,
+                            paddingLeft: 10,
+                            lineHeight: 1.5,
                           }}
                         >
                           "{s.note}"
