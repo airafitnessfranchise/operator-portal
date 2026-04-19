@@ -3968,29 +3968,49 @@
       }
 
       // ── Territory Dashboard (multi-location overview) ──
-      function LocStat({ label, value, color = T.accent }) {
+      function LocStat({ label, value, status }) {
+        let dotColor = null;
+        if (status === "good") dotColor = T.green;
+        else if (status === "warn") dotColor = T.amber;
+        else if (status === "bad") dotColor = T.red;
         return (
           <div style={{ textAlign: "center", minWidth: 0 }}>
             <div
               style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 5,
                 fontSize: 14,
-                fontWeight: 800,
-                color,
+                fontWeight: 500,
+                color: T.textHi,
                 fontFamily: "'Outfit',sans-serif",
+                letterSpacing: "-0.01em",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
             >
+              {dotColor && (
+                <span
+                  style={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: "50%",
+                    background: dotColor,
+                    flexShrink: 0,
+                  }}
+                />
+              )}
               {value}
             </div>
             <div
               style={{
                 fontSize: 9,
-                color: T.dim,
-                letterSpacing: "0.06em",
+                color: T.textDim,
+                letterSpacing: "0.1em",
                 textTransform: "uppercase",
-                marginTop: 2,
+                marginTop: 3,
               }}
             >
               {label}
@@ -4071,15 +4091,15 @@
           .toUpperCase();
 
         return (
-          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
-            <div style={{ marginBottom: 20 }}>
+          <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
+            <div style={{ marginBottom: 24 }}>
               <div
                 style={{
                   fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
+                  fontWeight: 500,
+                  letterSpacing: "0.12em",
                   textTransform: "uppercase",
-                  color: T.dim,
+                  color: T.textMuted,
                 }}
               >
                 {monthLabel}
@@ -4087,49 +4107,48 @@
               <div
                 style={{
                   fontSize: 22,
-                  fontWeight: 800,
-                  color: T.white,
+                  fontWeight: 500,
+                  color: T.textHi,
                   fontFamily: "'Outfit',sans-serif",
-                  marginTop: 2,
+                  letterSpacing: "-0.01em",
+                  marginTop: 4,
                 }}
               >
                 Territory Overview
               </div>
-              <div style={{ fontSize: 12, color: T.dim, marginTop: 4 }}>
+              <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>
                 {accessibleLocations.length} locations · aggregated
               </div>
             </div>
 
             {error && (
               <div
+                className="surface-card"
                 style={{
-                  padding: "12px 14px",
-                  borderRadius: 10,
-                  background: T.redDim,
-                  border: `1px solid ${T.red}33`,
+                  padding: "14px 16px",
                   marginBottom: 16,
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  gap: 10,
+                  gap: 12,
+                  borderLeft: `3px solid ${T.red}`,
                 }}
               >
-                <div style={{ color: T.red, fontSize: 12, fontWeight: 600 }}>
-                  Couldn't load territory data.
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: T.red,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <div style={{ color: T.text, fontSize: 13, fontWeight: 500 }}>
+                    Couldn't load territory data.
+                  </div>
                 </div>
-                <button
-                  onClick={load}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 8,
-                    border: `1px solid ${T.red}44`,
-                    background: "transparent",
-                    color: T.red,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
+                <button className="btn-ghost" onClick={load}>
                   Retry
                 </button>
               </div>
@@ -4137,34 +4156,31 @@
 
             {emptyCache && (
               <div
+                className="surface-card"
                 style={{
-                  padding: "12px 14px",
-                  borderRadius: 10,
-                  background: T.blueDim,
-                  border: `1px solid ${T.blue}33`,
+                  padding: "14px 16px",
                   marginBottom: 16,
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  gap: 10,
+                  gap: 12,
                 }}
               >
-                <div style={{ color: T.blue, fontSize: 12, fontWeight: 600 }}>
-                  Syncing territory data… refresh in a minute.
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: T.airaBlue,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <div style={{ color: T.text, fontSize: 13, fontWeight: 500 }}>
+                    Syncing territory data… refresh in a minute.
+                  </div>
                 </div>
-                <button
-                  onClick={load}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 8,
-                    border: `1px solid ${T.blue}44`,
-                    background: "transparent",
-                    color: T.blue,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
+                <button className="btn-ghost" onClick={load}>
                   Refresh
                 </button>
               </div>
@@ -4174,32 +4190,28 @@
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                gap: 8,
+                gap: 10,
                 marginBottom: 10,
               }}
             >
               <KPI
                 label="Leads"
                 value={loading ? <SkelBar w={36} h={24} /> : totals.leads}
-                color={T.blue}
               />
               <KPI
                 label="Booked"
                 value={
                   loading ? <SkelBar w={36} h={24} /> : totals.booked_appts
                 }
-                color={T.accent}
               />
               <KPI
                 label="Showed"
                 value={loading ? <SkelBar w={36} h={24} /> : totals.showed}
-                color={T.accent}
                 sub={loading ? null : `${showRate}% show rate`}
               />
               <KPI
                 label="No Showed"
                 value={loading ? <SkelBar w={36} h={24} /> : totals.no_showed}
-                color={T.red}
               />
             </div>
 
@@ -4207,14 +4219,13 @@
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                gap: 8,
+                gap: 10,
                 marginBottom: 18,
               }}
             >
               <KPI
                 label="Sales"
                 value={loading ? <SkelBar w={36} h={24} /> : totals.sales}
-                color={T.orange}
                 sub={loading ? null : `${closeRate}% close`}
               />
               <KPI
@@ -4226,15 +4237,9 @@
                     `$${totals.revenue.toLocaleString()}`
                   )
                 }
-                color={T.accent}
                 sub={loading ? null : `$${avgSale.toLocaleString()} avg`}
               />
-              <KPI
-                label="Ad Spend"
-                value="—"
-                color={T.yellow}
-                sub="(syncing)"
-              />
+              <KPI label="Ad Spend" value="—" sub="(syncing)" />
               <KPI
                 label="Locations"
                 value={
@@ -4244,37 +4249,29 @@
                     accessibleLocations.length
                   )
                 }
-                color={T.blue}
               />
             </div>
 
-            <div
-              style={{
-                background: T.card,
-                border: `1px solid ${T.border}`,
-                borderRadius: 14,
-                overflow: "hidden",
-              }}
-            >
+            <div className="surface-card" style={{ overflow: "hidden" }}>
               <div
                 style={{
-                  padding: "16px 20px 12px",
+                  padding: "20px 24px 14px",
                   fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
+                  fontWeight: 500,
+                  letterSpacing: "0.12em",
                   textTransform: "uppercase",
-                  color: T.dim,
+                  color: T.textMuted,
                 }}
               >
-                🏢 Locations
+                Locations
               </div>
               {loading &&
                 [0, 1].map((i) => (
                   <div
                     key={`skel-${i}`}
                     style={{
-                      padding: "16px 20px",
-                      borderTop: `1px solid ${T.border}`,
+                      padding: "18px 24px",
+                      borderTop: `0.5px solid ${T.border}`,
                       display: "flex",
                       flexDirection: "column",
                       gap: 10,
@@ -4302,11 +4299,11 @@
               {!loading && rows.length === 0 && !error && (
                 <div
                   style={{
-                    padding: "18px 20px",
-                    borderTop: `1px solid ${T.border}`,
+                    padding: "22px 24px",
+                    borderTop: `0.5px solid ${T.border}`,
                     textAlign: "center",
-                    color: T.muted,
-                    fontSize: 12,
+                    color: T.textMuted,
+                    fontSize: 13,
                   }}
                 >
                   No accessible locations returned.
@@ -4321,8 +4318,6 @@
                   const rrv = Number(r.revenue) || 0;
                   const lcr = rlds > 0 ? Math.round((rs / rlds) * 100) : 0;
                   const lsr = rbkd > 0 ? Math.round((rshw / rbkd) * 100) : 0;
-                  const colors = [T.accent, T.orange, T.purple, T.blue];
-                  const color = colors[i % colors.length];
                   const name = r.location_name || "—";
                   const initial = (name[0] || "?").toUpperCase();
                   return (
@@ -4333,21 +4328,31 @@
                         width: "100%",
                         textAlign: "left",
                         display: "block",
-                        padding: "14px 20px",
-                        borderTop: `1px solid ${T.border}`,
+                        padding: "18px 24px",
+                        borderTop: `0.5px solid ${T.border}`,
                         border: "none",
+                        borderTopWidth: "0.5px",
+                        borderTopStyle: "solid",
+                        borderTopColor: T.border,
                         background: "transparent",
                         color: T.text,
                         cursor: "pointer",
                         fontFamily: "inherit",
+                        transition: "background 160ms ease",
                       }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background = T.surfaceHover)
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.background = "transparent")
+                      }
                     >
                       <div
                         style={{
                           display: "flex",
                           alignItems: "center",
                           gap: 12,
-                          marginBottom: 12,
+                          marginBottom: 14,
                         }}
                       >
                         <div
@@ -4355,14 +4360,13 @@
                             width: 36,
                             height: 36,
                             borderRadius: 10,
-                            background: `${color}22`,
-                            border: `2px solid ${color}44`,
+                            background: T.airaBlueDim,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
                             fontSize: 14,
-                            fontWeight: 800,
-                            color,
+                            fontWeight: 500,
+                            color: T.airaBlue,
                             fontFamily: "'Outfit',sans-serif",
                             flexShrink: 0,
                           }}
@@ -4373,8 +4377,9 @@
                           <div
                             style={{
                               fontSize: 14,
-                              fontWeight: 700,
-                              color: T.white,
+                              fontWeight: 500,
+                              color: T.textHi,
+                              letterSpacing: "-0.005em",
                               overflow: "hidden",
                               textOverflow: "ellipsis",
                               whiteSpace: "nowrap",
@@ -4382,7 +4387,13 @@
                           >
                             {name}
                           </div>
-                          <div style={{ fontSize: 11, color: T.dim }}>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: T.textMuted,
+                              marginTop: 2,
+                            }}
+                          >
                             Tap to view details →
                           </div>
                         </div>
@@ -4391,26 +4402,25 @@
                         style={{
                           display: "grid",
                           gridTemplateColumns: "repeat(6, 1fr)",
-                          gap: 4,
+                          gap: 6,
                         }}
                       >
-                        <LocStat label="Leads" value={rlds} color={T.blue} />
-                        <LocStat label="Booked" value={rbkd} color={T.accent} />
+                        <LocStat label="Leads" value={rlds} />
+                        <LocStat label="Booked" value={rbkd} />
                         <LocStat
                           label="Showed"
                           value={rshw}
-                          color={lsr >= 40 ? T.accent : T.red}
+                          status={lsr >= 40 ? "good" : "bad"}
                         />
-                        <LocStat label="Sales" value={rs} color={T.orange} />
+                        <LocStat label="Sales" value={rs} />
                         <LocStat
                           label="Close"
                           value={`${lcr}%`}
-                          color={lcr >= 40 ? T.accent : T.red}
+                          status={lcr >= 40 ? "good" : "bad"}
                         />
                         <LocStat
                           label="Rev"
                           value={`$${rrv.toLocaleString()}`}
-                          color={T.accent}
                         />
                       </div>
                     </button>
