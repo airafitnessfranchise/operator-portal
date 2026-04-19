@@ -841,67 +841,64 @@
 
       // ── Components ──
       function StatusPill({ status }) {
-        const colors = {
-          "New Lead": { bg: T.blueDim, text: T.blue },
-          Booked: { bg: T.accentDim, text: T.accent },
-          Confirmed: { bg: T.accentDim, text: T.accent },
-          "No Show": { bg: T.redDim, text: T.red },
-          Show: { bg: T.yellowDim, text: T.yellow },
-          Sold: { bg: T.orangeDim, text: T.orange },
-          "7DP Given": { bg: T.blueDim, text: T.blue },
-          "7DP Not Converted": { bg: T.redDim, text: T.red },
-          Cancelled: { bg: T.redDim, text: T.red },
+        const dots = {
+          "New Lead": T.airaBlue,
+          Booked: T.airaBlue,
+          Confirmed: T.green,
+          "No Show": T.red,
+          Show: T.green,
+          Sold: T.green,
+          "7DP Given": T.airaBlue,
+          "7DP Not Converted": T.red,
+          Cancelled: T.red,
         };
-        const c = colors[status] || { bg: T.muted, text: T.dim };
+        const dot = dots[status] || T.textDim;
         return (
           <span
             style={{
-              display: "inline-block",
-              padding: "3px 10px",
-              borderRadius: 6,
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: "0.03em",
-              background: c.bg,
-              color: c.text,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 10,
+              fontWeight: 500,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: T.textMuted,
             }}
           >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: dot,
+                flexShrink: 0,
+              }}
+            />
             {status}
           </span>
         );
       }
 
-      function ActionBtn({
-        icon,
-        label,
-        href,
-        onClick,
-        color = T.accent,
-        small,
-      }) {
+      // ActionBtn — per-lead/per-contact quick action.
+      // `primary` renders Aira Blue (one per card); otherwise secondary.
+      function ActionBtn({ icon, label, href, onClick, primary, small }) {
+        const className = primary ? "btn-primary" : "btn-secondary";
         const s = {
           display: "inline-flex",
           alignItems: "center",
           gap: 6,
-          padding: small ? "8px 14px" : "10px 18px",
-          borderRadius: 10,
-          border: `1.5px solid ${color}33`,
-          background: `${color}11`,
-          color,
+          padding: small ? "8px 14px" : "10px 16px",
           fontSize: small ? 12 : 13,
-          fontWeight: 600,
-          cursor: "pointer",
           textDecoration: "none",
-          transition: "all 0.15s",
-          letterSpacing: "0.02em",
         };
         return href ? (
-          <a href={href} onClick={onClick} style={s}>
+          <a href={href} onClick={onClick} className={className} style={s}>
             <span style={{ fontSize: small ? 14 : 16 }}>{icon}</span>
             {label}
           </a>
         ) : (
-          <button onClick={onClick} style={s}>
+          <button onClick={onClick} className={className} style={s}>
             <span style={{ fontSize: small ? 14 : 16 }}>{icon}</span>
             {label}
           </button>
@@ -1714,14 +1711,15 @@
           );
 
         return (
-          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+          <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
             <div
               style={{
                 fontSize: 22,
-                fontWeight: 800,
-                color: T.white,
+                fontWeight: 500,
+                color: T.textHi,
                 fontFamily: "'Outfit',sans-serif",
-                marginBottom: 16,
+                letterSpacing: "-0.01em",
+                marginBottom: 18,
               }}
             >
               Leads
@@ -1733,8 +1731,8 @@
                   left: 14,
                   top: "50%",
                   transform: "translateY(-50%)",
-                  fontSize: 16,
-                  color: T.muted,
+                  fontSize: 14,
+                  color: T.textDim,
                 }}
               >
                 🔍
@@ -1747,8 +1745,8 @@
                   width: "100%",
                   padding: "12px 16px 12px 42px",
                   borderRadius: 12,
-                  border: `1px solid ${T.border}`,
-                  background: T.card,
+                  border: `0.5px solid ${T.border}`,
+                  background: T.surface,
                   color: T.text,
                   fontSize: 14,
                   outline: "none",
@@ -1765,38 +1763,39 @@
                 marginBottom: 8,
               }}
             >
-              {filters.map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 8,
-                    border: `1px solid ${filter === f ? T.accent : T.border}`,
-                    background: filter === f ? T.accentDim : "transparent",
-                    color: filter === f ? T.accent : T.dim,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
-                    cursor: "pointer",
-                  }}
-                >
-                  {f}
-                </button>
-              ))}
+              {filters.map((f) => {
+                const active = filter === f;
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: 999,
+                      border: "none",
+                      background: active ? T.airaBlue : T.airaBlueSubtle,
+                      color: active ? "#ffffff" : T.textMuted,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      whiteSpace: "nowrap",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      transition: "background 160ms ease",
+                    }}
+                  >
+                    {f}
+                  </button>
+                );
+              })}
             </div>
             {filtered.map((lead) => (
               <div
                 key={lead.id}
                 onClick={() => onSelect(lead)}
+                className="surface-card interactive"
                 style={{
-                  background: T.card,
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 14,
                   padding: "16px 18px",
                   marginBottom: 10,
-                  cursor: "pointer",
-                  transition: "border-color 0.15s",
                 }}
               >
                 <div
@@ -1805,41 +1804,54 @@
                     justifyContent: "space-between",
                     alignItems: "flex-start",
                     marginBottom: 8,
+                    gap: 10,
                   }}
                 >
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div
-                      style={{ fontSize: 15, fontWeight: 700, color: T.white }}
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 500,
+                        color: T.textHi,
+                        letterSpacing: "-0.005em",
+                      }}
                     >
                       {lead.first} {lead.last}
                     </div>
-                    <div style={{ fontSize: 12, color: T.dim, marginTop: 2 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: T.textMuted,
+                        marginTop: 2,
+                      }}
+                    >
                       {lead.source} · {lead.date}
                     </div>
                   </div>
                   <StatusPill status={lead.status} />
                 </div>
                 {lead.assigned && (
-                  <div style={{ fontSize: 11, color: T.dim }}>
+                  <div style={{ fontSize: 12, color: T.textMuted }}>
                     Assigned:{" "}
-                    <span style={{ color: T.text, fontWeight: 600 }}>
+                    <span style={{ color: T.text, fontWeight: 500 }}>
                       {lead.assigned}
                     </span>
                   </div>
                 )}
                 {lead.aptDate && (
-                  <div style={{ fontSize: 11, color: T.dim }}>
+                  <div style={{ fontSize: 12, color: T.textMuted }}>
                     Appt:{" "}
-                    <span style={{ color: T.accent }}>{lead.aptDate}</span>
+                    <span style={{ color: T.text, fontWeight: 500 }}>
+                      {lead.aptDate}
+                    </span>
                   </div>
                 )}
                 {lead.notes && (
                   <div
                     style={{
-                      fontSize: 11,
-                      color: T.yellow,
-                      marginTop: 4,
-                      fontStyle: "italic",
+                      fontSize: 12,
+                      color: T.textMuted,
+                      marginTop: 6,
                     }}
                   >
                     {lead.notes}
@@ -1850,7 +1862,7 @@
                     icon="📞"
                     label="Call"
                     href={`tel:${lead.phone}`}
-                    color={T.accent}
+                    primary
                     small
                     onClick={() =>
                       markPendingCall({
@@ -1864,7 +1876,6 @@
                     icon="💬"
                     label="Text"
                     href={`sms:${lead.phone}`}
-                    color={T.blue}
                     small
                   />
                 </div>
@@ -1874,7 +1885,7 @@
               <div
                 style={{
                   textAlign: "center",
-                  color: T.muted,
+                  color: T.textMuted,
                   padding: 40,
                   fontSize: 14,
                 }}
@@ -1908,29 +1919,21 @@
         ];
 
         return (
-          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+          <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
             <button
+              className="btn-ghost"
               onClick={onBack}
               style={{
-                background: "transparent",
-                border: "none",
-                color: T.dim,
                 fontSize: 13,
-                cursor: "pointer",
-                padding: "4px 0",
-                marginBottom: 16,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
+                marginBottom: 14,
+                paddingLeft: 0,
               }}
             >
               ← Back to Leads
             </button>
             <div
+              className="surface-card"
               style={{
-                background: T.card,
-                border: `1px solid ${T.border}`,
-                borderRadius: 16,
                 padding: 24,
                 marginBottom: 16,
               }}
@@ -1940,20 +1943,28 @@
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "flex-start",
+                  gap: 12,
                 }}
               >
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div
                     style={{
-                      fontSize: 24,
-                      fontWeight: 800,
-                      color: T.white,
+                      fontSize: 22,
+                      fontWeight: 500,
+                      color: T.textHi,
                       fontFamily: "'Outfit',sans-serif",
+                      letterSpacing: "-0.01em",
                     }}
                   >
                     {lead.first} {lead.last}
                   </div>
-                  <div style={{ fontSize: 13, color: T.dim, marginTop: 4 }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: T.textMuted,
+                      marginTop: 4,
+                    }}
+                  >
                     {lead.source} · {lead.date}
                   </div>
                 </div>
@@ -1964,7 +1975,7 @@
                   marginTop: 20,
                   display: "flex",
                   flexDirection: "column",
-                  gap: 8,
+                  gap: 10,
                 }}
               >
                 <div
@@ -1979,7 +1990,7 @@
                   <a
                     href={`tel:${lead.phone}`}
                     onClick={markCall}
-                    style={{ color: T.accent, fontWeight: 600 }}
+                    style={{ color: T.airaBlueDark, fontWeight: 500 }}
                   >
                     {lead.phone}
                   </a>
@@ -2008,7 +2019,10 @@
                   >
                     <span>👤</span>
                     <span style={{ color: T.text }}>
-                      Assigned to <strong>{lead.assigned}</strong>
+                      Assigned to{" "}
+                      <strong style={{ fontWeight: 500, color: T.textHi }}>
+                        {lead.assigned}
+                      </strong>
                     </span>
                   </div>
                 )}
@@ -2024,7 +2038,7 @@
                     <span>📅</span>
                     <span style={{ color: T.text }}>
                       Appointment:{" "}
-                      <strong style={{ color: T.accent }}>
+                      <strong style={{ fontWeight: 500, color: T.textHi }}>
                         {lead.aptDate}
                       </strong>
                     </span>
@@ -2043,30 +2057,18 @@
                   icon="📞"
                   label="Call Now"
                   href={`tel:${lead.phone}`}
-                  color={T.accent}
+                  primary
                   onClick={markCall}
                 />
-                <ActionBtn
-                  icon="💬"
-                  label="Text"
-                  href={`sms:${lead.phone}`}
-                  color={T.blue}
-                />
+                <ActionBtn icon="💬" label="Text" href={`sms:${lead.phone}`} />
                 {onBook && (
-                  <ActionBtn
-                    icon="📅"
-                    label="Book Appt"
-                    onClick={onBook}
-                    color={T.orange}
-                  />
+                  <ActionBtn icon="📅" label="Book Appt" onClick={onBook} />
                 )}
               </div>
             </div>
             <div
+              className="surface-card"
               style={{
-                background: T.card,
-                border: `1px solid ${T.border}`,
-                borderRadius: 16,
                 padding: 20,
                 marginBottom: 16,
               }}
@@ -2074,49 +2076,47 @@
               <div
                 style={{
                   fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
+                  fontWeight: 500,
+                  letterSpacing: "0.12em",
                   textTransform: "uppercase",
-                  color: T.dim,
-                  marginBottom: 12,
+                  color: T.textMuted,
+                  marginBottom: 14,
                 }}
               >
                 Update Status
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {statuses.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setNewStatus(s)}
-                    style={{
-                      padding: "8px 14px",
-                      borderRadius: 8,
-                      border: `1.5px solid ${newStatus === s ? T.accent : T.border}`,
-                      background: newStatus === s ? T.accentDim : "transparent",
-                      color: newStatus === s ? T.accent : T.dim,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    {STATUS_ICONS[s] || "○"} {s}
-                  </button>
-                ))}
+                {statuses.map((s) => {
+                  const active = newStatus === s;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => setNewStatus(s)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: `0.5px solid ${active ? T.airaBlue : T.border}`,
+                        background: active ? T.airaBlueDim : T.surface,
+                        color: active ? T.airaBlueDark : T.text,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        transition: "all 160ms ease",
+                      }}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
               </div>
               {newStatus !== lead.status && (
                 <button
+                  className="btn-primary"
                   style={{
                     width: "100%",
-                    marginTop: 14,
+                    marginTop: 16,
                     padding: "12px",
-                    borderRadius: 10,
-                    border: "none",
-                    background: `linear-gradient(135deg,${T.accent},${T.blue})`,
-                    color: T.bg,
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: "pointer",
                   }}
                 >
                   Save Status → {newStatus}
@@ -2124,22 +2124,15 @@
               )}
             </div>
             {lead.notes && (
-              <div
-                style={{
-                  background: T.card,
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 16,
-                  padding: 20,
-                }}
-              >
+              <div className="surface-card" style={{ padding: 20 }}>
                 <div
                   style={{
                     fontSize: 11,
-                    fontWeight: 700,
-                    letterSpacing: "0.1em",
+                    fontWeight: 500,
+                    letterSpacing: "0.12em",
                     textTransform: "uppercase",
-                    color: T.dim,
-                    marginBottom: 8,
+                    color: T.textMuted,
+                    marginBottom: 10,
                   }}
                 >
                   Notes
@@ -2159,19 +2152,13 @@
         const [reply, setReply] = useState("");
 
         if (selected) {
+          const incoming = selected.direction === "in";
           return (
-            <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+            <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
               <button
+                className="btn-ghost"
                 onClick={() => setSelected(null)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: T.dim,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  padding: "4px 0",
-                  marginBottom: 16,
-                }}
+                style={{ fontSize: 13, marginBottom: 14, paddingLeft: 0 }}
               >
                 ← Back
               </button>
@@ -2181,20 +2168,28 @@
                   justifyContent: "space-between",
                   alignItems: "center",
                   marginBottom: 20,
+                  gap: 12,
                 }}
               >
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div
                     style={{
                       fontSize: 20,
-                      fontWeight: 800,
-                      color: T.white,
+                      fontWeight: 500,
+                      color: T.textHi,
                       fontFamily: "'Outfit',sans-serif",
+                      letterSpacing: "-0.01em",
                     }}
                   >
                     {selected.name}
                   </div>
-                  <div style={{ fontSize: 12, color: T.dim }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: T.textMuted,
+                      marginTop: 2,
+                    }}
+                  >
                     {selected.phone}
                   </div>
                 </div>
@@ -2202,7 +2197,7 @@
                   icon="📞"
                   label="Call"
                   href={`tel:${selected.phone}`}
-                  color={T.accent}
+                  primary
                   small
                   onClick={() =>
                     markPendingCall({
@@ -2214,10 +2209,8 @@
                 />
               </div>
               <div
+                className="surface-card"
                 style={{
-                  background: T.card,
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 14,
                   padding: 20,
                   minHeight: 300,
                   display: "flex",
@@ -2230,30 +2223,29 @@
                     marginBottom: 16,
                     display: "flex",
                     flexDirection: "column",
-                    gap: 10,
+                    gap: 8,
                   }}
                 >
                   <div
                     style={{
-                      alignSelf:
-                        selected.direction === "in" ? "flex-start" : "flex-end",
+                      alignSelf: incoming ? "flex-start" : "flex-end",
                       maxWidth: "80%",
-                      padding: "10px 16px",
+                      padding: "10px 14px",
                       borderRadius: 14,
-                      background:
-                        selected.direction === "in" ? T.surface : T.accentDim,
-                      color: selected.direction === "in" ? T.text : T.accent,
+                      background: incoming ? T.surfaceAlt : T.airaBlue,
+                      color: incoming ? T.text : "#ffffff",
+                      border: incoming ? `0.5px solid ${T.border}` : "none",
                       fontSize: 14,
+                      lineHeight: 1.4,
                     }}
                   >
                     {selected.lastMsg}
                   </div>
                   <div
                     style={{
-                      alignSelf:
-                        selected.direction === "in" ? "flex-start" : "flex-end",
+                      alignSelf: incoming ? "flex-start" : "flex-end",
                       fontSize: 10,
-                      color: T.muted,
+                      color: T.textDim,
                     }}
                   >
                     {selected.time}
@@ -2269,24 +2261,16 @@
                     flex: 1,
                     padding: "12px 16px",
                     borderRadius: 12,
-                    border: `1px solid ${T.border}`,
-                    background: T.card,
+                    border: `0.5px solid ${T.border}`,
+                    background: T.surface,
                     color: T.text,
                     fontSize: 14,
                     outline: "none",
                   }}
                 />
                 <button
-                  style={{
-                    padding: "12px 20px",
-                    borderRadius: 12,
-                    border: "none",
-                    background: T.accent,
-                    color: T.bg,
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
+                  className="btn-primary"
+                  style={{ padding: "12px 20px" }}
                 >
                   Send
                 </button>
@@ -2296,14 +2280,15 @@
         }
 
         return (
-          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+          <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
             <div
               style={{
                 fontSize: 22,
-                fontWeight: 800,
-                color: T.white,
+                fontWeight: 500,
+                color: T.textHi,
                 fontFamily: "'Outfit',sans-serif",
-                marginBottom: 16,
+                letterSpacing: "-0.01em",
+                marginBottom: 18,
               }}
             >
               Conversations
@@ -2312,17 +2297,13 @@
               <div
                 key={c.id}
                 onClick={() => setSelected(c)}
+                className="surface-card interactive"
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 14,
                   padding: "14px 16px",
-                  background: T.card,
-                  border: `1px solid ${c.unread > 0 ? T.accent + "33" : T.border}`,
-                  borderRadius: 14,
                   marginBottom: 8,
-                  cursor: "pointer",
-                  transition: "border-color 0.15s",
                 }}
               >
                 <div
@@ -2330,14 +2311,14 @@
                     width: 42,
                     height: 42,
                     borderRadius: "50%",
-                    background: c.unread > 0 ? T.accentDim : T.surface,
-                    border: `2px solid ${c.unread > 0 ? T.accent + "44" : T.border}`,
+                    background: T.airaBlueDim,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontSize: 16,
-                    fontWeight: 800,
-                    color: c.unread > 0 ? T.accent : T.dim,
+                    fontSize: 15,
+                    fontWeight: 500,
+                    color: T.airaBlue,
+                    fontFamily: "'Outfit',sans-serif",
                     flexShrink: 0,
                   }}
                 >
@@ -2354,8 +2335,8 @@
                     <span
                       style={{
                         fontSize: 14,
-                        fontWeight: c.unread > 0 ? 700 : 500,
-                        color: c.unread > 0 ? T.white : T.text,
+                        fontWeight: c.unread > 0 ? 500 : 400,
+                        color: T.textHi,
                       }}
                     >
                       {c.name}
@@ -2363,7 +2344,7 @@
                     <span
                       style={{
                         fontSize: 11,
-                        color: T.muted,
+                        color: T.textDim,
                         flexShrink: 0,
                         marginLeft: 8,
                       }}
@@ -2374,7 +2355,7 @@
                   <div
                     style={{
                       fontSize: 13,
-                      color: T.dim,
+                      color: T.textMuted,
                       marginTop: 2,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -2382,7 +2363,7 @@
                     }}
                   >
                     {c.direction === "out" && (
-                      <span style={{ color: T.muted }}>You: </span>
+                      <span style={{ color: T.textDim }}>You: </span>
                     )}
                     {c.lastMsg}
                   </div>
@@ -2390,10 +2371,10 @@
                 {c.unread > 0 && (
                   <div
                     style={{
-                      background: T.accent,
-                      color: T.bg,
+                      background: T.airaBlue,
+                      color: "#ffffff",
                       fontSize: 10,
-                      fontWeight: 800,
+                      fontWeight: 500,
                       padding: "2px 7px",
                       borderRadius: 10,
                       flexShrink: 0,
@@ -2547,20 +2528,12 @@
         });
 
         const statusStyles = {
-          confirmed: { bg: T.accentDim, color: T.accent, label: "Confirmed" },
-          showed: {
-            bg: "rgba(16,185,129,0.15)",
-            color: TRIAGE_GREEN,
-            label: "Showed",
-          },
-          noshow: { bg: T.redDim, color: T.red, label: "No Show" },
-          cancelled: { bg: T.redDim, color: T.red, label: "Cancelled" },
-          invalid: {
-            bg: "rgba(107,109,123,0.15)",
-            color: T.muted,
-            label: "Invalid",
-          },
-          new: { bg: T.blueDim, color: T.blue, label: "New" },
+          confirmed: { dot: T.airaBlue, label: "Confirmed" },
+          showed: { dot: T.green, label: "Showed" },
+          noshow: { dot: T.red, label: "No Show" },
+          cancelled: { dot: T.red, label: "Cancelled" },
+          invalid: { dot: T.textDim, label: "Invalid" },
+          new: { dot: T.airaBlue, label: "New" },
         };
 
         const cancelledCount = rows.filter(
@@ -2568,13 +2541,13 @@
         ).length;
 
         return (
-          <div className="fade-in" style={{ padding: "20px 16px 24px" }}>
+          <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "flex-start",
-                marginBottom: 4,
+                marginBottom: 6,
                 gap: 8,
                 flexWrap: "wrap",
               }}
@@ -2582,15 +2555,17 @@
               <div
                 style={{
                   fontSize: 22,
-                  fontWeight: 800,
-                  color: T.white,
+                  fontWeight: 500,
+                  color: T.textHi,
                   fontFamily: "'Outfit',sans-serif",
+                  letterSpacing: "-0.01em",
                 }}
               >
                 Appointments
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                 <button
+                  className="btn-secondary"
                   onClick={triggerSync}
                   disabled={syncing}
                   title="Refresh from GHL"
@@ -2598,16 +2573,10 @@
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 4,
-                    padding: "8px 10px",
-                    borderRadius: 10,
-                    border: `1px solid ${T.border}`,
-                    background: "transparent",
-                    color: T.text,
+                    padding: "8px 12px",
                     fontSize: 13,
-                    fontWeight: 700,
-                    cursor: syncing ? "wait" : "pointer",
-                    fontFamily: "inherit",
                     opacity: syncing ? 0.6 : 1,
+                    cursor: syncing ? "wait" : "pointer",
                   }}
                 >
                   <span
@@ -2622,20 +2591,11 @@
                 </button>
                 {onBook && (
                   <button
+                    className="btn-primary"
                     onClick={onBook}
                     style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
                       padding: "8px 14px",
-                      borderRadius: 10,
-                      border: `1px solid ${T.accent}44`,
-                      background: T.accentDim,
-                      color: T.accent,
                       fontSize: 13,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      fontFamily: "inherit",
                       whiteSpace: "nowrap",
                     }}
                   >
@@ -2647,7 +2607,7 @@
             <div
               style={{
                 fontSize: 12,
-                color: T.dim,
+                color: T.textMuted,
                 marginBottom: 18,
                 display: "flex",
                 alignItems: "center",
@@ -2661,12 +2621,13 @@
                   style={{
                     background: "transparent",
                     border: "none",
-                    color: T.dim,
+                    color: T.textMuted,
                     fontSize: 11,
-                    fontWeight: 600,
+                    fontWeight: 500,
                     cursor: "pointer",
                     padding: 0,
                     textDecoration: "underline",
+                    fontFamily: "inherit",
                   }}
                 >
                   {showCancelled ? "hide" : "show"} {cancelledCount} cancelled
@@ -2676,18 +2637,28 @@
 
             {error && (
               <div
+                className="surface-card"
                 style={{
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  background: T.redDim,
-                  border: `1px solid ${T.red}33`,
-                  color: T.red,
-                  fontSize: 12,
-                  fontWeight: 600,
+                  padding: "12px 14px",
                   marginBottom: 14,
+                  borderLeft: `3px solid ${T.red}`,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
                 }}
               >
-                {error}
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: T.red,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ color: T.text, fontSize: 13, fontWeight: 500 }}>
+                  {error}
+                </span>
               </div>
             )}
 
@@ -2698,11 +2669,9 @@
                 {[0, 1, 2].map((i) => (
                   <div
                     key={`skel-${i}`}
+                    className="surface-card"
                     style={{
                       padding: "14px 18px",
-                      background: T.card,
-                      border: `1px solid ${T.border}`,
-                      borderRadius: 14,
                       display: "flex",
                       alignItems: "center",
                       gap: 14,
@@ -2734,13 +2703,11 @@
 
             {!loading && grouped.length === 0 && !error && (
               <div
+                className="surface-card"
                 style={{
                   padding: 24,
-                  background: T.card,
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 14,
                   textAlign: "center",
-                  color: T.muted,
+                  color: T.textMuted,
                   fontSize: 13,
                   lineHeight: 1.5,
                 }}
@@ -2752,147 +2719,153 @@
             )}
 
             {!loading &&
-              grouped.map((group) => (
-                <div key={group.key} style={{ marginBottom: 20 }}>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 700,
-                      letterSpacing: "0.08em",
-                      textTransform: "uppercase",
-                      color: group.key === "Today" ? T.accent : T.dim,
-                      marginBottom: 10,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    {group.key === "Today" && (
-                      <span
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          background: T.accent,
-                          animation: "pulse 2s infinite",
-                        }}
-                      />
-                    )}
-                    {group.key}
-                  </div>
-                  {group.items.map((a) => {
-                    const st =
-                      statusStyles[a.appointment_status] || statusStyles.new;
-                    const when = new Date(a.start_time);
-                    const contact = contactMap[a.ghl_contact_id];
-                    const displayName =
-                      a.title ||
-                      contact?.full_name ||
-                      [contact?.first_name, contact?.last_name]
-                        .filter(Boolean)
-                        .join(" ") ||
-                      "(no title)";
-                    const phone = contact?.phone || null;
-                    return (
-                      <div
-                        key={a.ghl_event_id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 14,
-                          padding: "14px 18px",
-                          background: T.card,
-                          border: `1px solid ${T.border}`,
-                          borderRadius: 14,
-                          marginBottom: 8,
-                        }}
-                      >
-                        <div style={{ minWidth: 62, textAlign: "center" }}>
-                          <div
-                            style={{
-                              fontSize: 15,
-                              fontWeight: 800,
-                              color: T.white,
-                              fontFamily: "'Outfit',sans-serif",
-                            }}
-                          >
-                            {formatApptTime(when)}
-                          </div>
-                        </div>
-                        <div
+              grouped.map((group) => {
+                const isToday = group.key === "Today";
+                return (
+                  <div key={group.key} style={{ marginBottom: 20 }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 500,
+                        letterSpacing: "0.12em",
+                        textTransform: "uppercase",
+                        color: T.textMuted,
+                        marginBottom: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      {isToday && (
+                        <span
                           style={{
-                            width: 1,
-                            height: 36,
-                            background: T.border,
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: T.airaBlue,
+                            animation: "pulse 2s infinite",
                           }}
                         />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div
-                            style={{
-                              fontSize: 14,
-                              fontWeight: 700,
-                              color: T.white,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {displayName}
-                          </div>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              marginTop: 4,
-                            }}
-                          >
-                            <span
+                      )}
+                      {group.key}
+                    </div>
+                    {group.items.map((a) => {
+                      const st =
+                        statusStyles[a.appointment_status] || statusStyles.new;
+                      const when = new Date(a.start_time);
+                      const contact = contactMap[a.ghl_contact_id];
+                      const displayName =
+                        a.title ||
+                        contact?.full_name ||
+                        [contact?.first_name, contact?.last_name]
+                          .filter(Boolean)
+                          .join(" ") ||
+                        "(no title)";
+                      const phone = contact?.phone || null;
+                      return (
+                        <div
+                          key={a.ghl_event_id}
+                          className="surface-card"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 14,
+                            padding: "14px 18px",
+                            marginBottom: 8,
+                          }}
+                        >
+                          <div style={{ minWidth: 62, textAlign: "center" }}>
+                            <div
                               style={{
-                                padding: "2px 8px",
-                                borderRadius: 5,
-                                fontSize: 10,
-                                fontWeight: 700,
-                                background: st.bg,
-                                color: st.color,
+                                fontSize: 15,
+                                fontWeight: 500,
+                                color: T.textHi,
+                                fontFamily: "'Outfit',sans-serif",
+                                letterSpacing: "-0.01em",
                               }}
                             >
-                              {st.label}
-                            </span>
+                              {formatApptTime(when)}
+                            </div>
                           </div>
-                        </div>
-                        {phone && (
-                          <a
-                            href={`tel:${phone}`}
-                            onClick={() =>
-                              markPendingCall({
-                                contactId: a.ghl_contact_id,
-                                contactName: displayName,
-                                ghl_location_id: selectedLocationId,
-                              })
-                            }
+                          <div
                             style={{
-                              width: 38,
-                              height: 38,
-                              borderRadius: 10,
-                              background: T.accentDim,
-                              border: `1px solid ${T.accent}33`,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: 16,
-                              color: T.accent,
-                              flexShrink: 0,
+                              width: 1,
+                              height: 36,
+                              background: T.border,
                             }}
-                          >
-                            📞
-                          </a>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontSize: 14,
+                                fontWeight: 500,
+                                color: T.textHi,
+                                letterSpacing: "-0.005em",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {displayName}
+                            </div>
+                            <div
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                marginTop: 5,
+                                fontSize: 10,
+                                fontWeight: 500,
+                                letterSpacing: "0.12em",
+                                textTransform: "uppercase",
+                                color: T.textMuted,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: "50%",
+                                  background: st.dot,
+                                  flexShrink: 0,
+                                }}
+                              />
+                              {st.label}
+                            </div>
+                          </div>
+                          {phone && (
+                            <a
+                              href={`tel:${phone}`}
+                              onClick={() =>
+                                markPendingCall({
+                                  contactId: a.ghl_contact_id,
+                                  contactName: displayName,
+                                  ghl_location_id: selectedLocationId,
+                                })
+                              }
+                              style={{
+                                width: 38,
+                                height: 38,
+                                borderRadius: 10,
+                                background: T.airaBlueDim,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 16,
+                                color: T.airaBlue,
+                                flexShrink: 0,
+                                textDecoration: "none",
+                              }}
+                            >
+                              📞
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
           </div>
         );
       }
@@ -2917,14 +2890,15 @@
                 width: 54,
                 height: 54,
                 borderRadius: 14,
-                background: `linear-gradient(135deg,${T.accent},${T.orange})`,
+                background: T.airaBlue,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 26,
-                fontWeight: 900,
-                color: T.bg,
+                fontWeight: 500,
+                color: "#ffffff",
                 fontFamily: "'Outfit',sans-serif",
+                letterSpacing: "-0.01em",
               }}
             >
               A
@@ -2935,8 +2909,8 @@
                 width: 26,
                 height: 26,
                 borderRadius: "50%",
-                border: `3px solid ${T.border}`,
-                borderTopColor: T.accent,
+                border: `2px solid ${T.border}`,
+                borderTopColor: T.airaBlue,
               }}
             />
           </div>
