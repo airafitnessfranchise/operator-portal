@@ -8944,7 +8944,11 @@
         );
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
-          throw new Error(data.error || `HTTP ${res.status}`);
+          const err = new Error(data.error || `HTTP ${res.status}`);
+          err.status = res.status;
+          err.code = data.code || null;
+          err.body = data || null;
+          throw err;
         }
         return data;
       }
@@ -10001,6 +10005,7 @@
                 mode="create"
                 locations={locations}
                 staff={staff}
+                onToast={onToast}
                 onClose={() => setAddOpen(false)}
                 onSaved={async () => {
                   setAddOpen(false);
@@ -10016,6 +10021,7 @@
                 initialLocations={userLocMap[editUser.id] || []}
                 locations={locations}
                 staff={staff}
+                onToast={onToast}
                 onClose={() => setEditUser(null)}
                 onSaved={async () => {
                   setEditUser(null);
@@ -10373,6 +10379,7 @@
         staff,
         onClose,
         onSaved,
+        onToast,
       }) {
         const isEdit = mode === "edit";
         const [email, setEmail] = useState(user?.email || "");
@@ -10487,8 +10494,9 @@
                 location_ghl_ids: selectedLocs,
                 primary_location_ghl_id: primaryLoc,
               });
+              onSaved();
             } else {
-              await callEdgeFunction("admin-invite-user", {
+              const resp = await callEdgeFunction("admin-invite-user", {
                 email: email.trim(),
                 full_name: fullName.trim(),
                 role,
@@ -10497,9 +10505,33 @@
                 links: linksPayload,
                 redirect_to: window.location.origin + window.location.pathname,
               });
+              if (resp?.relinked && onToast) {
+                // Distinct "info" tone — this wasn't a fresh invite. The
+                // admin needs to understand the auth record preexisted
+                // and the user got a reset link, not a welcome invite.
+                onToast({
+                  kind: "info",
+                  text: `Relinked existing account for ${email.trim()}. They'll receive a password reset email.`,
+                });
+              }
+              onSaved();
             }
-            onSaved();
           } catch (e) {
+            // Branch A from admin-invite-user: email belongs to a fully-
+            // seated portal user. Keep the modal open so the admin can
+            // fix the email or cancel, and surface the guidance as a
+            // toast instead of an inline error banner.
+            if (e && e.code === "already_portal_user") {
+              if (onToast) {
+                onToast({
+                  kind: "info",
+                  text: `${email.trim()} is already a portal user. Edit their row from the People list instead.`,
+                });
+              }
+              setError(null);
+              setSubmitting(false);
+              return;
+            }
             setError(e && e.message ? e.message : "Save failed");
             setSubmitting(false);
           }
@@ -13252,7 +13284,9 @@
                     ? T.green
                     : toast.kind === "error"
                       ? T.red
-                      : T.airaBlue;
+                      : toast.kind === "info"
+                        ? T.amber
+                        : T.airaBlue;
                 return (
                   <div
                     className="fade-in"

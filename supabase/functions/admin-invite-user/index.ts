@@ -119,25 +119,6 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // Reject duplicate email in public.users
-  const { data: existing, error: existErr } = await adminClient
-    .from("users")
-    .select("id")
-    .ilike("email", email)
-    .maybeSingle();
-  if (existErr) {
-    return jsonResp(
-      { ok: false, error: `user lookup failed: ${existErr.message}` },
-      500,
-    );
-  }
-  if (existing) {
-    return jsonResp(
-      { ok: false, error: "a portal user with this email already exists" },
-      409,
-    );
-  }
-
   // Resolve GHL link: primary location's link wins, then any non-null link
   let resolvedGhlUserId: string | null =
     (typeof links[primaryLocationGhlId] === "string"
@@ -153,6 +134,210 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ── Pre-flight: figure out which of three cases we're in ────────────
+  // A) auth.users row AND public.users row both exist     → 409 friendly
+  // B) auth.users row exists but NO public.users row      → re-link path
+  // C) neither exists                                     → normal invite
+  //
+  // Branch B is what bit us with Jasmine Crago: April seed → orphan
+  // cleanup removed public.users but left the auth row. A second invite
+  // attempt would then hit "User already registered" from
+  // inviteUserByEmail and dead-end the admin.
+  const { data: portalExisting, error: portalExistErr } = await adminClient
+    .from("users")
+    .select("id")
+    .ilike("email", email)
+    .maybeSingle();
+  if (portalExistErr) {
+    return jsonResp(
+      {
+        ok: false,
+        error: `portal user lookup failed: ${portalExistErr.message}`,
+      },
+      500,
+    );
+  }
+
+  // admin.listUsers doesn't support server-side email filter in older
+  // supabase-js versions, so we page through with perPage=200. Operator
+  // portal has ~dozens of auth users, not thousands — one page covers it.
+  // If it ever stops covering it we'll switch to a direct SQL read.
+  let existingAuthUserId: string | null = null;
+  try {
+    const { data: authList, error: authListErr } =
+      await adminClient.auth.admin.listUsers({ page: 1, perPage: 200 });
+    if (authListErr) throw new Error(authListErr.message);
+    const hit = (authList?.users || []).find(
+      (u: { id: string; email?: string | null }) =>
+        (u.email || "").toLowerCase() === email,
+    );
+    existingAuthUserId = hit?.id || null;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return jsonResp({ ok: false, error: `auth lookup failed: ${msg}` }, 500);
+  }
+
+  // Branch A: already a full portal user — friendly 409.
+  if (portalExisting && existingAuthUserId) {
+    return jsonResp(
+      {
+        ok: false,
+        code: "already_portal_user",
+        error:
+          "This person is already a portal user. Edit their row instead of re-adding.",
+      },
+      409,
+    );
+  }
+  // portal row exists but no auth row: treat as if it's a fully-seated
+  // portal user — same friendly message. This shouldn't normally happen
+  // (portal rows always point at an auth_user_id) but don't blindly
+  // invite over it.
+  if (portalExisting && !existingAuthUserId) {
+    return jsonResp(
+      {
+        ok: false,
+        code: "already_portal_user",
+        error:
+          "This person is already a portal user. Edit their row instead of re-adding.",
+      },
+      409,
+    );
+  }
+
+  // Shared insert helpers so Branch B and Branch C write identical shapes.
+  const insertPortalUser = async (authUserId: string) => {
+    const { data: userRow, error: userErr } = await adminClient
+      .from("users")
+      .insert({
+        auth_user_id: authUserId,
+        email,
+        full_name,
+        role: userRole,
+        ghl_user_id: resolvedGhlUserId,
+        active: true,
+      })
+      .select("*")
+      .single();
+    return { userRow, userErr };
+  };
+
+  const insertUserLocations = async (userId: string) => {
+    const { data: locs, error: locErr } = await adminClient
+      .from("locations")
+      .select("id, ghl_location_id")
+      .in("ghl_location_id", locationGhlIds);
+    if (locErr) return { error: locErr };
+    const ulRows = (locs || []).map(
+      (l: { id: string; ghl_location_id: string }) => ({
+        user_id: userId,
+        location_id: l.id,
+        is_primary: l.ghl_location_id === primaryLocationGhlId,
+      }),
+    );
+    if (ulRows.length === 0) return { error: null };
+    const { error: ulErr } = await adminClient
+      .from("user_locations")
+      .insert(ulRows);
+    return { error: ulErr };
+  };
+
+  // ── Branch B: stranded auth — re-link ───────────────────────────────
+  if (existingAuthUserId && !portalExisting) {
+    const authUserId = existingAuthUserId;
+
+    // Rollback chain: Branch B must NOT touch the auth user on failure
+    // (it preexisted — leave it alone). Only clean up what we created.
+    const { userRow, userErr } = await insertPortalUser(authUserId);
+    if (userErr || !userRow) {
+      const msg = userErr?.message || "";
+      if (
+        /users_ghl_user_id_key|duplicate key.*ghl_user_id/i.test(msg) ||
+        (userErr as any)?.code === "23505"
+      ) {
+        return jsonResp(
+          {
+            ok: false,
+            error:
+              "That GHL staff member is already linked to another portal user",
+          },
+          409,
+        );
+      }
+      return jsonResp({ ok: false, error: `users insert failed: ${msg}` }, 500);
+    }
+
+    const rollbackRelink = async () => {
+      try {
+        await adminClient
+          .from("user_locations")
+          .delete()
+          .eq("user_id", userRow.id);
+      } catch {
+        /* noop */
+      }
+      try {
+        await adminClient.from("users").delete().eq("id", userRow.id);
+      } catch {
+        /* noop */
+      }
+      // Deliberately: do NOT delete the auth user.
+    };
+
+    const { error: ulErr } = await insertUserLocations(userRow.id);
+    if (ulErr) {
+      await rollbackRelink();
+      return jsonResp(
+        {
+          ok: false,
+          error: `user_locations insert failed: ${ulErr.message}`,
+        },
+        500,
+      );
+    }
+
+    // Send a password-reset link — the re-link equivalent of an invite
+    // email. The user clicks it and lands on SetPasswordScreen. This is
+    // Supabase's standard recovery flow, not a new invite, so it doesn't
+    // 422 on "already registered."
+    try {
+      await adminClient.auth.admin.generateLink({
+        type: "recovery",
+        email,
+        options: { redirectTo },
+      });
+    } catch (e) {
+      // Non-fatal: the portal rows are in place; admin can resend from
+      // the People list. Surface it in the response so the UI can warn.
+      const linkErr = e instanceof Error ? e.message : String(e);
+      return jsonResp({
+        ok: true,
+        relinked: true,
+        user_id: userRow.id,
+        email,
+        user: userRow,
+        linked_ghl_user_id: resolvedGhlUserId,
+        reused_auth_user_id: authUserId,
+        reset_link_warning: linkErr,
+        message:
+          "Relinked existing account, but the password-reset email failed to queue. Resend from the People list.",
+      });
+    }
+
+    return jsonResp({
+      ok: true,
+      relinked: true,
+      user_id: userRow.id,
+      email,
+      user: userRow,
+      linked_ghl_user_id: resolvedGhlUserId,
+      reused_auth_user_id: authUserId,
+      message: "Sent password reset link to existing account.",
+    });
+  }
+
+  // ── Branch C: brand-new invite (existing behavior, unchanged) ───────
+  //
   // Send the invite. inviteUserByEmail creates the auth user AND dispatches
   // the invite email in a single call — the previous createUser + generateLink
   // flow never triggered mail.send, which is why portal-initiated invites
@@ -183,19 +368,7 @@ Deno.serve(async (req) => {
     }
   };
 
-  // Insert public.users (links the Supabase auth identity to the portal user)
-  const { data: userRow, error: userErr } = await adminClient
-    .from("users")
-    .insert({
-      auth_user_id: authUserId,
-      email,
-      full_name,
-      role: userRole,
-      ghl_user_id: resolvedGhlUserId,
-      active: true,
-    })
-    .select("*")
-    .single();
+  const { userRow, userErr } = await insertPortalUser(authUserId);
   if (userErr || !userRow) {
     await rollbackAuth();
     const msg = userErr?.message || "";
@@ -225,44 +398,22 @@ Deno.serve(async (req) => {
     await rollbackAuth();
   };
 
-  // Resolve location UUIDs for user_locations
-  const { data: locs, error: locErr } = await adminClient
-    .from("locations")
-    .select("id, ghl_location_id")
-    .in("ghl_location_id", locationGhlIds);
-  if (locErr) {
+  const { error: ulErr } = await insertUserLocations(userRow.id);
+  if (ulErr) {
     await rollbackAll();
     return jsonResp(
-      { ok: false, error: `locations lookup failed: ${locErr.message}` },
+      {
+        ok: false,
+        error: `user_locations insert failed: ${ulErr.message}`,
+      },
       500,
     );
-  }
-  const ulRows = (locs || []).map(
-    (l: { id: string; ghl_location_id: string }) => ({
-      user_id: userRow.id,
-      location_id: l.id,
-      is_primary: l.ghl_location_id === primaryLocationGhlId,
-    }),
-  );
-  if (ulRows.length > 0) {
-    const { error: ulErr } = await adminClient
-      .from("user_locations")
-      .insert(ulRows);
-    if (ulErr) {
-      await rollbackAll();
-      return jsonResp(
-        {
-          ok: false,
-          error: `user_locations insert failed: ${ulErr.message}`,
-        },
-        500,
-      );
-    }
   }
 
   return jsonResp({
     ok: true,
     success: true,
+    relinked: false,
     user_id: userRow.id,
     email,
     user: userRow,
