@@ -1157,6 +1157,7 @@
       }) {
         const [kpis, setKpis] = useState(null);
         const [leaderboard, setLeaderboard] = useState([]);
+        const [trialCounts, setTrialCounts] = useState(null);
         const [loading, setLoading] = useState(true);
         const [error, setError] = useState(null);
 
@@ -1165,19 +1166,26 @@
           setLoading(true);
           setError(null);
           try {
-            const [kpisRes, lbRes] = await Promise.all([
+            const [kpisRes, lbRes, trialRes] = await Promise.all([
               window.supabase.rpc("dashboard_kpis", {
                 p_ghl_location_id: selectedLocationId,
               }),
               // rep_leaderboard takes text[] now — scoped to this one
               // gym. Returns activity: calls / appts / sales / gross /
-              // mrr. Sort comes pre-applied from the RPC (mrr desc).
+              // mrr / trial_to_sale. Sort comes pre-applied (mrr desc).
               window.supabase.rpc("rep_leaderboard", {
                 p_ghl_location_ids: [selectedLocationId],
+              }),
+              // Trial-pass counts for the TRIAL PASSES card. given /
+              // converted / not_converted; we compute still_active
+              // client-side so the math is visible.
+              window.supabase.rpc("location_trial_counts", {
+                p_ghl_location_id: selectedLocationId,
               }),
             ]);
             if (kpisRes.error) throw kpisRes.error;
             if (lbRes.error) throw lbRes.error;
+            if (trialRes.error) throw trialRes.error;
             setKpis(
               kpisRes.data && kpisRes.data[0]
                 ? kpisRes.data[0]
@@ -1201,6 +1209,11 @@
                   },
             );
             setLeaderboard(lbRes.data || []);
+            setTrialCounts(
+              trialRes.data && trialRes.data[0]
+                ? trialRes.data[0]
+                : { given: 0, converted: 0, not_converted: 0 },
+            );
           } catch (e) {
             console.error("dashboard RPC failed:", e);
             setError(e && e.message ? e.message : "Failed to load dashboard");
@@ -1441,6 +1454,84 @@
                 sub={loading ? null : "confirmed, future"}
               />
             </div>
+
+            {(() => {
+              // TRIAL PASSES card — a fourth metric lane alongside sales.
+              // Given / Converted / Not Converted / Still Active. Dollars
+              // from converted trials already roll into Sales/Gross/MRR
+              // via counts_as_sale on the "7 Day Pass Converted" stage,
+              // so no separate dollar math here (2026-04-20 decision).
+              const given = Number(trialCounts?.given) || 0;
+              const converted = Number(trialCounts?.converted) || 0;
+              const notConverted = Number(trialCounts?.not_converted) || 0;
+              const active = Math.max(0, given - converted - notConverted);
+              if (
+                !loading &&
+                given === 0 &&
+                converted === 0 &&
+                notConverted === 0
+              ) {
+                return null;
+              }
+              return (
+                <div
+                  className="surface-card"
+                  style={{
+                    padding: "14px 16px",
+                    marginBottom: 18,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 500,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: T.textMuted,
+                    }}
+                  >
+                    Trial Passes
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      color: T.textHi,
+                      fontFamily: "'Outfit',sans-serif",
+                      letterSpacing: "-0.005em",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {loading ? (
+                      <SkelBar w={220} h={16} />
+                    ) : (
+                      <>
+                        <span style={{ fontWeight: 500 }}>{given}</span>
+                        <span style={{ color: T.textMuted }}> given · </span>
+                        <span style={{ fontWeight: 500, color: T.green }}>
+                          {converted}
+                        </span>
+                        <span style={{ color: T.textMuted }}>
+                          {" "}
+                          converted ·{" "}
+                        </span>
+                        <span style={{ fontWeight: 500, color: T.red }}>
+                          {notConverted}
+                        </span>
+                        <span style={{ color: T.textMuted }}>
+                          {" "}
+                          not converted ·{" "}
+                        </span>
+                        <span style={{ fontWeight: 500 }}>{active}</span>
+                        <span style={{ color: T.textMuted }}> active</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {!loading && awaitingUpdate > 0 && (
               <div
@@ -1752,6 +1843,7 @@
                     const rsales = Number(r.sales) || 0;
                     const rgross = Number(r.gross) || 0;
                     const rmrr = Number(r.mrr) || 0;
+                    const rTrialToSale = Number(r.trial_to_sale) || 0;
                     const display = r.full_name || "Unknown";
                     const initial = (display[0] || "?").toUpperCase();
                     const rowKey =
@@ -1860,6 +1952,17 @@
                         <div style={statCellStyle}>
                           <div style={numCellStyle}>{rsales}</div>
                           <div style={labelCellStyle}>SALES</div>
+                        </div>
+                        <div style={{ ...statCellStyle, minWidth: 56 }}>
+                          <div
+                            style={{
+                              ...numCellStyle,
+                              color: rTrialToSale > 0 ? T.textHi : T.textDim,
+                            }}
+                          >
+                            {rTrialToSale}
+                          </div>
+                          <div style={labelCellStyle}>TRIAL→SALE</div>
                         </div>
                         <div style={{ ...statCellStyle, minWidth: 60 }}>
                           <div
@@ -3075,6 +3178,12 @@
         // browser's native sms: handler was bypassing GHL entirely.
         const [composeOpen, setComposeOpen] = useState(false);
         const [sendingMessage, setSendingMessage] = useState(false);
+        // AI Off toggles the "ai off" tag on this contact via ghl-set-tag.
+        // Closebot's workflow watches for the tag and pauses automation
+        // when present. Optimistic UI: flip immediately, rollback on
+        // edge-function failure.
+        const [aiOff, setAiOff] = useState(false);
+        const [aiOffSaving, setAiOffSaving] = useState(false);
 
         const markCall = () =>
           markPendingCall({
@@ -3086,43 +3195,50 @@
         const load = useCallback(async () => {
           setLoading(true);
           try {
-            const [oppsRes, stagesRes, callsRes, staffRes] = await Promise.all([
-              window.supabase
-                .from("opportunities")
-                .select(
-                  "ghl_opportunity_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, gross_sale, mrr, is_pif, sold_at, assigned_to, updated_at_ghl, created_at_ghl",
-                )
-                .eq("ghl_location_id", lead.location_id)
-                .eq("ghl_contact_id", lead.contact_id || "__none__")
-                .order("updated_at_ghl", {
-                  ascending: false,
-                  nullsFirst: false,
-                }),
-              window.supabase
-                .from("pipeline_stages")
-                .select(
-                  "ghl_stage_id, name, position, counts_as_show, counts_as_no_show, counts_as_sale, pipeline_id",
-                )
-                .eq("ghl_location_id", lead.location_id)
-                .order("position", {
-                  ascending: true,
-                  nullsFirst: false,
-                }),
-              window.supabase
-                .from("call_logs")
-                .select(
-                  "id, outcome, notes, called_at, user_id, users:user_id(full_name)",
-                )
-                .eq("ghl_location_id", lead.location_id)
-                .eq("ghl_contact_id", lead.contact_id || "__none__")
-                .order("called_at", { ascending: false })
-                .limit(20),
-              window.supabase
-                .from("ghl_staff")
-                .select("ghl_user_id, full_name, email")
-                .eq("ghl_location_id", lead.location_id)
-                .order("full_name", { ascending: true, nullsFirst: false }),
-            ]);
+            const [oppsRes, stagesRes, callsRes, staffRes, contactRes] =
+              await Promise.all([
+                window.supabase
+                  .from("opportunities")
+                  .select(
+                    "ghl_opportunity_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, gross_sale, mrr, is_pif, sold_at, assigned_to, updated_at_ghl, created_at_ghl",
+                  )
+                  .eq("ghl_location_id", lead.location_id)
+                  .eq("ghl_contact_id", lead.contact_id || "__none__")
+                  .order("updated_at_ghl", {
+                    ascending: false,
+                    nullsFirst: false,
+                  }),
+                window.supabase
+                  .from("pipeline_stages")
+                  .select(
+                    "ghl_stage_id, name, position, counts_as_show, counts_as_no_show, counts_as_sale, counts_as_trial, pipeline_id",
+                  )
+                  .eq("ghl_location_id", lead.location_id)
+                  .order("position", {
+                    ascending: true,
+                    nullsFirst: false,
+                  }),
+                window.supabase
+                  .from("call_logs")
+                  .select(
+                    "id, outcome, notes, called_at, user_id, users:user_id(full_name)",
+                  )
+                  .eq("ghl_location_id", lead.location_id)
+                  .eq("ghl_contact_id", lead.contact_id || "__none__")
+                  .order("called_at", { ascending: false })
+                  .limit(20),
+                window.supabase
+                  .from("ghl_staff")
+                  .select("ghl_user_id, full_name, email")
+                  .eq("ghl_location_id", lead.location_id)
+                  .order("full_name", { ascending: true, nullsFirst: false }),
+                // Contact row for the "ai off" tag state.
+                window.supabase
+                  .from("contacts")
+                  .select("tags")
+                  .eq("ghl_contact_id", lead.contact_id || "__none__")
+                  .maybeSingle(),
+              ]);
             if (oppsRes.error) throw oppsRes.error;
             if (stagesRes.error) throw stagesRes.error;
             if (callsRes.error) throw callsRes.error;
@@ -3131,6 +3247,10 @@
             setStages(stagesRes.data || []);
             setCallLogs(callsRes.data || []);
             setStaff(staffRes.data || []);
+            const tagsArr = Array.isArray(contactRes?.data?.tags)
+              ? contactRes.data.tags
+              : [];
+            setAiOff(tagsArr.some((t) => (t || "").toLowerCase() === "ai off"));
             const thisOpp = (oppsRes.data || []).find(
               (o) => o.ghl_opportunity_id === lead.opportunity_id,
             );
@@ -3373,6 +3493,37 @@
           }
         };
 
+        const toggleAiOff = async () => {
+          if (!lead.contact_id || aiOffSaving) return;
+          const next = !aiOff;
+          setAiOff(next); // optimistic
+          setAiOffSaving(true);
+          try {
+            await callEdgeFunction("ghl-set-tag", {
+              contact_id: lead.contact_id,
+              tag: "ai off",
+              action: next ? "add" : "remove",
+            });
+            if (onToast) {
+              onToast({
+                kind: next ? "info" : "success",
+                text: next ? "AI paused on this contact" : "AI re-enabled",
+              });
+            }
+          } catch (e) {
+            // Rollback on failure — don't mislead about GHL state.
+            setAiOff(!next);
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: e && e.message ? e.message : "AI Off toggle failed",
+              });
+            }
+          } finally {
+            setAiOffSaving(false);
+          }
+        };
+
         const canReassignAnyone =
           profile &&
           (profile.role === "admin" ||
@@ -3604,6 +3755,32 @@
                 />
                 {onBook && (
                   <ActionBtn icon="📅" label="Book Appt" onClick={onBook} />
+                )}
+                {lead.contact_id && (
+                  <button
+                    type="button"
+                    onClick={toggleAiOff}
+                    disabled={aiOffSaving}
+                    className={aiOff ? "btn-primary" : "btn-secondary"}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "10px 16px",
+                      fontSize: 13,
+                      cursor: aiOffSaving ? "wait" : "pointer",
+                      ...(aiOff
+                        ? {
+                            background: T.green,
+                            borderColor: T.green,
+                            color: "#ffffff",
+                          }
+                        : {}),
+                    }}
+                  >
+                    <span style={{ fontSize: 16 }}>{aiOff ? "✓" : "🤖"}</span>
+                    AI Off
+                  </button>
                 )}
               </div>
             </div>
@@ -7360,6 +7537,7 @@
                   sales: 0,
                   gross: 0,
                   mrr: 0,
+                  trial_to_sale: 0,
                   locations: [],
                 };
                 existing.calls += Number(r.calls) || 0;
@@ -7367,6 +7545,7 @@
                 existing.sales += Number(r.sales) || 0;
                 existing.gross += Number(r.gross) || 0;
                 existing.mrr += Number(r.mrr) || 0;
+                existing.trial_to_sale += Number(r.trial_to_sale) || 0;
                 const locName =
                   locNameById[r.ghl_location_id] || r.location_name;
                 if (locName && !existing.locations.includes(locName)) {
@@ -7499,6 +7678,18 @@
                           <div style={statCellStyle}>
                             <div style={numCellStyle}>{r.sales}</div>
                             <div style={labelCellStyle}>SALES</div>
+                          </div>
+                          <div style={{ ...statCellStyle, minWidth: 56 }}>
+                            <div
+                              style={{
+                                ...numCellStyle,
+                                color:
+                                  r.trial_to_sale > 0 ? T.textHi : T.textDim,
+                              }}
+                            >
+                              {r.trial_to_sale}
+                            </div>
+                            <div style={labelCellStyle}>TRIAL→SALE</div>
                           </div>
                           <div style={{ ...statCellStyle, minWidth: 60 }}>
                             <div
@@ -9634,7 +9825,7 @@
             const { data, error: err } = await window.supabase
               .from("pipeline_stages")
               .select(
-                "id, ghl_stage_id, name, position, counts_as_show, counts_as_no_show, counts_as_sale",
+                "id, ghl_stage_id, name, position, counts_as_show, counts_as_no_show, counts_as_sale, counts_as_trial",
               )
               .eq("ghl_location_id", location.ghl_location_id)
               .order("position", { ascending: true, nullsFirst: false });
@@ -9788,6 +9979,11 @@
                         label="Sale"
                         checked={!!s.counts_as_sale}
                         onChange={(v) => updateFlag(s, "counts_as_sale", v)}
+                      />
+                      <FlagToggle
+                        label="Trial"
+                        checked={!!s.counts_as_trial}
+                        onChange={(v) => updateFlag(s, "counts_as_trial", v)}
                       />
                     </div>
                   </div>

@@ -241,40 +241,93 @@ async function syncAppointments(
   return rows.length;
 }
 
+// Heuristic for NEWLY-DISCOVERED stages only. Once a stage exists in the
+// DB, the sync preserves whatever flags the admin (or an earlier run) set
+// — never overwriting them. Admins tune per-location in the Pipeline
+// Stage Editor, and syncs shouldn't undo their work.
+//
+// The order of the branches matters: "7 day pass converted" and "not
+// converted" must match before the bare "pass" rule, or the converted
+// terminal stages would get counts_as_trial = true.
 function classifyStage(name: string): {
   counts_as_show: boolean;
   counts_as_no_show: boolean;
   counts_as_sale: boolean;
+  counts_as_trial: boolean;
 } {
   const n = (name || "").toLowerCase();
   const has = (terms: string[]) => terms.some((t) => n.includes(t));
-  // Order matters: "no show" must be checked before "show"-ish terms.
-  if (has(["sold", "won", "closed"])) {
+  // "not converted" / "not interested" / "follow up" — terminal / parked;
+  // counts as nothing.
+  if (
+    n.includes("not converted") ||
+    n.includes("not interested") ||
+    n.includes("follow up") ||
+    n.includes("follow-up")
+  ) {
     return {
-      counts_as_show: true,
+      counts_as_show: false,
       counts_as_no_show: false,
-      counts_as_sale: true,
+      counts_as_sale: false,
+      counts_as_trial: false,
     };
   }
+  // "no show" — must be checked before "show"-ish terms.
   if (has(["no show", "no-show"])) {
     return {
       counts_as_show: false,
       counts_as_no_show: true,
       counts_as_sale: false,
+      counts_as_trial: false,
     };
   }
-  if (has(["booked", "confirmed", "showed", "appt", "pass"])) {
+  // "7 Day Pass Converted" (and any other "converted" terminal) — this
+  // IS a sale, so counts_as_sale + counts_as_show (they walked in).
+  // Intentionally NOT counts_as_trial: the trial is over, this is the
+  // sale lane now. Dollar capture happens via the Sale modal.
+  if (n.includes("converted") && !n.includes("not converted")) {
+    return {
+      counts_as_show: true,
+      counts_as_no_show: false,
+      counts_as_sale: true,
+      counts_as_trial: false,
+    };
+  }
+  // "Sold" / "Won" / "Closed" — direct sale lane.
+  if (has(["sold", "won", "closed"])) {
+    return {
+      counts_as_show: true,
+      counts_as_no_show: false,
+      counts_as_sale: true,
+      counts_as_trial: false,
+    };
+  }
+  // Trial pass itself — they walked in AND are on trial. Show + Trial.
+  if (n.includes("7 day pass") || n.includes("trial pass")) {
     return {
       counts_as_show: true,
       counts_as_no_show: false,
       counts_as_sale: false,
+      counts_as_trial: true,
     };
   }
-  // "lost", "not interested", "dead", "new lead", "new" — all default false.
+  // Any other show-ish stage: booked/confirmed intentionally no longer
+  // auto-flag as shows (a booking is not a walk-in — 2026-04-20 decision).
+  // Admins can flip on per-stage if a location uses the label differently.
+  if (has(["showed", "appt no show", "walk-in", "walked in"])) {
+    return {
+      counts_as_show: true,
+      counts_as_no_show: false,
+      counts_as_sale: false,
+      counts_as_trial: false,
+    };
+  }
+  // "lost", "dead", "new lead", "new", "booked", "confirmed" — default false.
   return {
     counts_as_show: false,
     counts_as_no_show: false,
     counts_as_sale: false,
+    counts_as_trial: false,
   };
 }
 
@@ -285,25 +338,32 @@ async function ensurePipeline(
   existingPipelineId: string | null,
   warnings: string[],
 ): Promise<{ pipelineId: string | null; stagesDiscovered: number }> {
-  if (existingPipelineId) {
-    return { pipelineId: existingPipelineId, stagesDiscovered: 0 };
-  }
-
+  // Always re-fetch the pipeline from GHL, even if we already have a
+  // pipeline_id cached. That's how new stages (Fox Lake's 2026-04-20
+  // "7 Day Pass Converted" / "Follow Up" additions) ever get into the
+  // cache after the first sync — previously this function exited early.
   const data = await ghlFetch(
     `/opportunities/pipelines?locationId=${encodeURIComponent(locationId)}`,
     apiKey,
   );
   const pipelines: any[] = data.pipelines || [];
   if (pipelines.length === 0) {
-    warnings.push(
-      `pipeline: no pipelines returned for ${locationId} — leaving pipeline_id null`,
-    );
-    return { pipelineId: null, stagesDiscovered: 0 };
+    if (!existingPipelineId) {
+      warnings.push(
+        `pipeline: no pipelines returned for ${locationId} — leaving pipeline_id null`,
+      );
+    }
+    return { pipelineId: existingPipelineId, stagesDiscovered: 0 };
   }
 
-  const first = pipelines[0];
-  const pipelineId: string | null = first.id || null;
-  const stages: any[] = first.stages || [];
+  // If we have an existing pipeline_id, prefer the matching pipeline in
+  // the response (in case GHL returns multiple). Otherwise take the first.
+  const matched = existingPipelineId
+    ? pipelines.find((p: any) => p?.id === existingPipelineId)
+    : null;
+  const first = matched || pipelines[0];
+  const pipelineId: string | null = first?.id || existingPipelineId || null;
+  const stages: any[] = first?.stages || [];
 
   if (!pipelineId) {
     warnings.push(
@@ -312,24 +372,85 @@ async function ensurePipeline(
     return { pipelineId: null, stagesDiscovered: 0 };
   }
 
+  let stagesDiscovered = 0;
   if (stages.length > 0) {
-    const rows = stages.map((s, i) => {
-      const flags = classifyStage(s.name || "");
-      return {
-        ghl_location_id: locationId,
-        pipeline_id: pipelineId,
-        ghl_stage_id: s.id,
-        name: s.name || "Untitled",
-        position: typeof s.position === "number" ? s.position : i,
-        ...flags,
-        updated_at: new Date().toISOString(),
-      };
-    });
-    const { error } = await supabase
+    // Preservation rule: existing pipeline_stages rows already have
+    // admin-curated flag values. We must NOT overwrite them on re-sync.
+    // So split the incoming list into (new, existing) by ghl_stage_id
+    // and write two different shapes:
+    //   - New stages → INSERT with heuristic-classified flag defaults.
+    //   - Existing stages → UPDATE only name/position/pipeline_id, never
+    //                       the four counts_as_* columns.
+    const incomingIds = stages.map((s) => s.id).filter(Boolean);
+    const { data: existingRows, error: existingErr } = await supabase
       .from("pipeline_stages")
-      .upsert(rows, { onConflict: "ghl_stage_id" });
-    if (error) {
-      throw new Error(`pipeline_stages upsert failed: ${error.message}`);
+      .select("id, ghl_stage_id")
+      .eq("ghl_location_id", locationId)
+      .in("ghl_stage_id", incomingIds);
+    if (existingErr) {
+      throw new Error(`pipeline_stages lookup failed: ${existingErr.message}`);
+    }
+    const existingIds = new Set(
+      (existingRows || []).map((r: any) => r.ghl_stage_id),
+    );
+
+    const nowIso = new Date().toISOString();
+    const newRows: any[] = [];
+    const updateRows: Array<{ id: string; name: string; position: number }> =
+      [];
+    stages.forEach((s, i) => {
+      if (!s.id) return;
+      if (existingIds.has(s.id)) {
+        const row = (existingRows || []).find(
+          (r: any) => r.ghl_stage_id === s.id,
+        );
+        if (row?.id) {
+          updateRows.push({
+            id: row.id,
+            name: s.name || "Untitled",
+            position: typeof s.position === "number" ? s.position : i,
+          });
+        }
+      } else {
+        const flags = classifyStage(s.name || "");
+        newRows.push({
+          ghl_location_id: locationId,
+          pipeline_id: pipelineId,
+          ghl_stage_id: s.id,
+          name: s.name || "Untitled",
+          position: typeof s.position === "number" ? s.position : i,
+          ...flags,
+          updated_at: nowIso,
+        });
+      }
+    });
+
+    if (newRows.length > 0) {
+      const { error: insErr } = await supabase
+        .from("pipeline_stages")
+        .insert(newRows);
+      if (insErr) {
+        throw new Error(`pipeline_stages insert failed: ${insErr.message}`);
+      }
+      stagesDiscovered = newRows.length;
+    }
+    // Apply name/position updates one row at a time — trivial volume
+    // (≤20 stages per location), avoids needing a batch-update RPC.
+    for (const r of updateRows) {
+      const { error: upErr } = await supabase
+        .from("pipeline_stages")
+        .update({
+          name: r.name,
+          position: r.position,
+          pipeline_id: pipelineId,
+          updated_at: nowIso,
+        })
+        .eq("id", r.id);
+      if (upErr) {
+        warnings.push(
+          `pipeline_stages update for ${r.id} failed: ${upErr.message}`,
+        );
+      }
     }
   }
 
@@ -343,7 +464,7 @@ async function ensurePipeline(
     );
   }
 
-  return { pipelineId, stagesDiscovered: stages.length };
+  return { pipelineId, stagesDiscovered };
 }
 
 async function syncGhlStaff(
