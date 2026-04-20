@@ -1850,6 +1850,10 @@
         const [search, setSearch] = useState("");
         const [showClosed, setShowClosed] = useState(false);
         const [stageFilter, setStageFilter] = useState("all");
+        // "followup" (default) puts oldest-contact / never-contacted at
+        // the top so the red/amber tail is the first thing a rep sees.
+        // "newest" is the old date_added DESC behaviour.
+        const [sortMode, setSortMode] = useState("followup");
 
         const locIds = useMemo(() => {
           if (aggregate) {
@@ -1904,16 +1908,55 @@
               new Set(opps.map((o) => o.ghl_contact_id).filter(Boolean)),
             );
             let contactsById = {};
+            // lastContactByContact[ghl_contact_id] = { t: ms epoch, kind: 'call'|'SMS' }
+            const lastContactByContact = {};
             if (contactIds.length > 0) {
-              const { data: cRows, error: cErr } = await window.supabase
-                .from("contacts")
-                .select(
-                  "ghl_contact_id, first_name, last_name, full_name, email, phone, source, date_added, assigned_to",
-                )
-                .in("ghl_contact_id", contactIds);
-              if (cErr) throw cErr;
+              // 3-way batched fetch: contacts for display, call_logs (only
+              // rows with a real outcome count as contact), and
+              // conversations (last_message_at includes both inbound and
+              // outbound — both count per the freshness rule).
+              const [cRes, callsRes, convsRes] = await Promise.all([
+                window.supabase
+                  .from("contacts")
+                  .select(
+                    "ghl_contact_id, first_name, last_name, full_name, email, phone, source, date_added, assigned_to",
+                  )
+                  .in("ghl_contact_id", contactIds),
+                window.supabase
+                  .from("call_logs")
+                  .select("ghl_contact_id, ended_at")
+                  .in("ghl_contact_id", contactIds)
+                  .not("outcome", "is", null)
+                  .order("ended_at", {
+                    ascending: false,
+                    nullsFirst: false,
+                  }),
+                window.supabase
+                  .from("conversations")
+                  .select("ghl_contact_id, last_message_at")
+                  .in("ghl_contact_id", contactIds)
+                  .not("last_message_at", "is", null),
+              ]);
+              if (cRes.error) throw cRes.error;
+              if (callsRes.error) throw callsRes.error;
+              if (convsRes.error) throw convsRes.error;
               contactsById = Object.fromEntries(
-                (cRows || []).map((c) => [c.ghl_contact_id, c]),
+                (cRes.data || []).map((c) => [c.ghl_contact_id, c]),
+              );
+              const noteContact = (contactId, ts, kind) => {
+                if (!contactId) return;
+                const t = ts ? new Date(ts).getTime() : 0;
+                if (!t) return;
+                const cur = lastContactByContact[contactId];
+                if (!cur || t > cur.t) {
+                  lastContactByContact[contactId] = { t, kind };
+                }
+              };
+              (callsRes.data || []).forEach((r) =>
+                noteContact(r.ghl_contact_id, r.ended_at, "call"),
+              );
+              (convsRes.data || []).forEach((r) =>
+                noteContact(r.ghl_contact_id, r.last_message_at, "SMS"),
               );
             }
 
@@ -1938,6 +1981,7 @@
                 [c.first_name, c.last_name].filter(Boolean).join(" ").trim() ||
                 o.name ||
                 "(unknown contact)";
+              const lc = lastContactByContact[o.ghl_contact_id] || null;
               return {
                 opportunity_id: o.ghl_opportunity_id,
                 contact_id: o.ghl_contact_id,
@@ -1967,11 +2011,13 @@
                 opp_assigned: o.assigned_to,
                 updated_at_ghl: o.updated_at_ghl,
                 created_at_ghl: o.created_at_ghl,
+                last_contact_at: lc ? lc.t : null,
+                last_contact_kind: lc ? lc.kind : null,
               };
             });
 
-            // Sort by contact.date_added DESC (with opp updated_at_ghl
-            // fallback so synthetic rows don't float to the bottom).
+            // Default insertion order (newest first) — visible.sort below
+            // reshuffles based on the user's toggle.
             composed.sort((a, b) => {
               const ax = new Date(
                 a.contact_date_added ||
@@ -2030,6 +2076,25 @@
               (l.email || "").toLowerCase().includes(q) ||
               (l.phone || "").toLowerCase().includes(q),
           );
+        }
+        // Copy so we don't mutate the state array
+        visible = visible.slice();
+        if (sortMode === "followup") {
+          // Oldest contact first (null treated as oldest); tiebreak on
+          // date_added desc so two never-contacted leads still show the
+          // freshest as the one to grab first.
+          visible.sort((a, b) => {
+            const at = a.last_contact_at ?? 0;
+            const bt = b.last_contact_at ?? 0;
+            if (at !== bt) return at - bt;
+            const ad = new Date(
+              a.contact_date_added || a.updated_at_ghl || 0,
+            ).getTime();
+            const bd = new Date(
+              b.contact_date_added || b.updated_at_ghl || 0,
+            ).getTime();
+            return bd - ad;
+          });
         }
 
         const closedCount =
@@ -2155,25 +2220,61 @@
               })}
             </div>
 
-            <label
+            <div
               style={{
-                display: "inline-flex",
+                display: "flex",
                 alignItems: "center",
-                gap: 8,
-                fontSize: 12,
-                color: T.textMuted,
+                flexWrap: "wrap",
+                gap: 10,
                 marginBottom: 14,
-                cursor: "pointer",
               }}
             >
-              <input
-                type="checkbox"
-                checked={showClosed}
-                onChange={(e) => setShowClosed(e.target.checked)}
-                style={{ accentColor: T.airaBlue }}
-              />
-              Show closed (sales, lost, abandoned)
-            </label>
+              {[
+                { key: "followup", label: "Needs follow-up" },
+                { key: "newest", label: "Newest leads" },
+              ].map((opt) => {
+                const active = sortMode === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setSortMode(opt.key)}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 999,
+                      border: "none",
+                      background: active ? T.airaBlue : T.airaBlueSubtle,
+                      color: active ? "#ffffff" : T.textMuted,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      transition: "background 160ms ease",
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+              <label
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 12,
+                  color: T.textMuted,
+                  cursor: "pointer",
+                  marginLeft: 4,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={showClosed}
+                  onChange={(e) => setShowClosed(e.target.checked)}
+                  style={{ accentColor: T.airaBlue }}
+                />
+                Show closed
+              </label>
+            </div>
 
             {error && (
               <div
@@ -2253,6 +2354,55 @@
                 )
                   .toString()
                   .toUpperCase();
+                // Last-contact freshness tier:
+                //   <24h  → green, "3h ago — SMS"
+                //   1-7d  → neutral dot (airaBlue), "2d ago — call"
+                //   8-14d → amber,  "10d ago"
+                //   15+d or never → red, "No contact logged"
+                const freshness = (() => {
+                  const t = lead.last_contact_at;
+                  if (!t) {
+                    return {
+                      dot: T.red,
+                      text: "No contact logged",
+                      tone: T.red,
+                    };
+                  }
+                  const ageMs = Date.now() - t;
+                  const dayMs = 86400000;
+                  const hrMs = 3600000;
+                  const kindSuffix = lead.last_contact_kind
+                    ? ` — ${lead.last_contact_kind}`
+                    : "";
+                  if (ageMs < dayMs) {
+                    const hrs = Math.max(1, Math.floor(ageMs / hrMs));
+                    return {
+                      dot: T.green,
+                      text: `${hrs}h ago${kindSuffix}`,
+                      tone: T.textMuted,
+                    };
+                  }
+                  const days = Math.floor(ageMs / dayMs);
+                  if (days <= 7) {
+                    return {
+                      dot: T.airaBlue,
+                      text: `${days}d ago${kindSuffix}`,
+                      tone: T.textMuted,
+                    };
+                  }
+                  if (days <= 14) {
+                    return {
+                      dot: T.amber,
+                      text: `${days}d ago`,
+                      tone: T.textMuted,
+                    };
+                  }
+                  return {
+                    dot: T.red,
+                    text: "No contact logged",
+                    tone: T.red,
+                  };
+                })();
                 return (
                   <div
                     key={lead.opportunity_id}
@@ -2337,6 +2487,29 @@
                         </span>
                       </div>
                     )}
+
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 11,
+                        fontWeight: 500,
+                        color: freshness.tone,
+                        marginTop: 6,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: freshness.dot,
+                          flexShrink: 0,
+                        }}
+                      />
+                      {freshness.text}
+                    </div>
 
                     <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                       {lead.phone && (
@@ -2614,6 +2787,10 @@
         // fresh close (pendingStage is the stage we'll commit on confirm)
         // or for an edit of the already-recorded sale (editMode: true).
         const [saleModal, setSaleModal] = useState(null);
+        // LeadDetail's "📞 Log Call" button opens CallOutcomeModal directly,
+        // bypassing the sessionStorage pending-call flow that was built
+        // for the tap-to-call path.
+        const [logCallOpen, setLogCallOpen] = useState(false);
 
         const markCall = () =>
           markPendingCall({
@@ -3088,6 +3265,11 @@
                     href={`sms:${lead.phone}`}
                   />
                 )}
+                <ActionBtn
+                  icon="📞"
+                  label="Log Call"
+                  onClick={() => setLogCallOpen(true)}
+                />
                 {onBook && (
                   <ActionBtn icon="📅" label="Book Appt" onClick={onBook} />
                 )}
@@ -3466,6 +3648,24 @@
               ))}
             </div>
 
+            {logCallOpen && (
+              <CallOutcomeModal
+                profile={profile}
+                direct={{
+                  ghl_location_id: lead.location_id,
+                  contactId: lead.contact_id,
+                  contactName: lead.full_name,
+                }}
+                onClose={() => setLogCallOpen(false)}
+                onLogged={() => {
+                  if (onToast) {
+                    onToast({ kind: "success", text: "Call logged." });
+                  }
+                  if (onChanged) onChanged();
+                  load();
+                }}
+              />
+            )}
             {saleModal && (
               <SaleModal
                 title={
@@ -6555,13 +6755,34 @@
       }
 
       // ── Call Outcome Modal ──
-      function CallOutcomeModal({ profile, onLogged }) {
-        const [pending, setPending] = useState(() => readPendingCall());
+      // CallOutcomeModal runs in two modes:
+      //   (1) Pending-call flow (default): driven by sessionStorage —
+      //       user taps a tel: link, markPendingCall() stashes the intent,
+      //       they return to the tab, this modal picks up the pending and
+      //       asks "how'd it go?". Used for rep-on-personal-phone flows.
+      //   (2) Direct (LeadDetail "📞 Log Call" button): `direct` prop
+      //       supplies contact info explicitly, `onClose` closes without
+      //       a sessionStorage write. Kept <5 seconds end-to-end.
+      function CallOutcomeModal({ profile, onLogged, direct, onClose }) {
+        const [pending, setPending] = useState(() =>
+          direct
+            ? {
+                ghl_location_id: direct.ghl_location_id,
+                contactId: direct.contactId,
+                contactName: direct.contactName,
+                calledAt: Date.now(),
+              }
+            : readPendingCall(),
+        );
         const [note, setNote] = useState("");
         const [submitting, setSubmitting] = useState(false);
         const [error, setError] = useState(null);
 
         useEffect(() => {
+          // The pending-call flow refreshes on focus / visibility because
+          // the intent was stashed in another tab. Direct mode never uses
+          // sessionStorage, so those listeners would just be noise.
+          if (direct) return;
           const refresh = () => setPending(readPendingCall());
           refresh();
           const onFocus = () => refresh();
@@ -6574,7 +6795,7 @@
             window.removeEventListener("focus", onFocus);
             document.removeEventListener("visibilitychange", onVis);
           };
-        }, []);
+        }, [direct]);
 
         if (!pending) return null;
 
@@ -6582,6 +6803,10 @@
           setSubmitting(true);
           setError(null);
           try {
+            const nowIso = new Date().toISOString();
+            const calledIso = direct
+              ? nowIso
+              : new Date(pending.calledAt).toISOString();
             const { error: err } = await window.supabase
               .from("call_logs")
               .insert({
@@ -6590,14 +6815,16 @@
                 user_id: profile.id,
                 outcome,
                 notes: note.trim() ? note.trim() : null,
-                called_at: new Date(pending.calledAt).toISOString(),
+                called_at: calledIso,
+                ended_at: nowIso,
               });
             if (err) throw err;
-            clearPendingCall();
+            if (!direct) clearPendingCall();
             setPending(null);
             setNote("");
             setSubmitting(false);
             if (onLogged) onLogged();
+            if (direct && onClose) onClose();
           } catch (e) {
             console.error("call_logs insert failed:", e);
             setError(e && e.message ? e.message : "Failed to log call");
@@ -6627,17 +6854,43 @@
             <div className="fade-in" style={MODAL_CARD}>
               <div
                 style={{
-                  fontSize: 10,
-                  fontWeight: 500,
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase",
-                  color: T.textMuted,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 10,
                 }}
               >
-                Log your call
-              </div>
-              <div style={{ ...MODAL_TITLE, lineHeight: 1.3 }}>
-                How'd your call with {pending.contactName} go?
+                <div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 500,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: T.textMuted,
+                    }}
+                  >
+                    Log your call
+                  </div>
+                  <div
+                    style={{
+                      ...MODAL_TITLE,
+                      marginTop: 4,
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    How'd your call with {pending.contactName} go?
+                  </div>
+                </div>
+                {direct && onClose && (
+                  <button
+                    onClick={onClose}
+                    disabled={submitting}
+                    style={MODAL_CLOSE(submitting)}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
               {outcomes.map((o) => (
                 <button

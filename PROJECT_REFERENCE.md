@@ -507,9 +507,10 @@ Then paste any of the build briefs from this document or your conversation with 
 
 ### Backlog
 
-| Item                       | Why it matters                                                                                                                             | When to do it                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
-| Stage-flag drift detection | If a franchisee renames a GHL stage, portal auto-discovery re-applies heuristic flags on next sync — could silently break Triage diagnosis | Add a `sync_log` warning when stage names change unexpectedly |
+| Item                                     | Why it matters                                                                                                                                                                                                       | When to do it                                                 |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Stage-flag drift detection               | If a franchisee renames a GHL stage, portal auto-discovery re-applies heuristic flags on next sync — could silently break Triage diagnosis                                                                           | Add a `sync_log` warning when stage names change unexpectedly |
+| Call logging is rep-discipline-dependent | Reps who skip logging create invisible gaps in the contact record. Leads indicator will show red/amber for leads that were actually called but not logged. Ops problem, not code — addressed via franchisee training | —                                                             |
 
 ### Common Problems
 
@@ -681,6 +682,9 @@ Going forward, any portal user who marks an opportunity as Booked or Sold is aut
 
 **April 20, 2026 — Sale amount captured at point of close.**
 When a portal user marks an opportunity as Sold (any stage where `counts_as_sale = true`), a required Sale modal captures the actual monthly membership price + optional PIF attach. Stored in `opportunities.monetary_value` (written through to GHL's `monetaryValue`) and `opportunities.is_pif` / `opportunities.pif_amount` (portal-only — GHL has no native PIF field). Dollar math throughout the portal (ADPS, dollars-on-the-table, leaderboard) now uses real values where available, falling back to the $220 Aira benchmark only when the location has <5 real-value sales this period (noise guard). This is how the portal catches silent fee-waiving — the #1 franchisee failure mode per training manual v8. `location_triage` returns `real_value_sales_count`, `missing_sale_value_count`, `using_benchmark_fallback`, and `annualized_mrr` so the UI can surface the sample-size state. `rep_leaderboard` now sorts by total MRR desc (not sale count) — 10 sales at $149 is worse than 8 at $229; the default sort itself is the coaching signal.
+
+**April 20, 2026 — Calls stay on personal phones; portal captures outcomes, not the voice path.**
+Operators call leads from their personal phones. The portal is NOT in the voice routing path. Instead, the portal provides a frictionless "📞 Log Call" button on LeadDetail that writes a `call_logs` row with an outcome in <5 seconds. Contact freshness on the Leads list is computed from logged calls (`call_logs.ended_at` where `outcome IS NOT NULL`) + SMS activity (`conversations.last_message_at`, both inbound and outbound count). Trade-off: we lose automatic call attribution and recordings, but avoid ~$1,500/month of Twilio voice cost across the franchise and keep reps working in the phone app they already use. Discipline: call logging becomes a daily franchisee standard. Leads showing "No contact logged" in red are either truly neglected or silently un-logged — Alyssa treats both as coaching signals.
 
 ---
 
