@@ -21,6 +21,9 @@ const VALID_ROLES = new Set([
   "sales_rep",
 ]);
 
+const DEFAULT_REDIRECT =
+  "https://airafitnessfranchise.github.io/operator-portal/";
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
@@ -85,7 +88,7 @@ Deno.serve(async (req) => {
   const redirectTo =
     typeof body?.redirect_to === "string" && body.redirect_to
       ? body.redirect_to
-      : undefined;
+      : DEFAULT_REDIRECT;
 
   if (!email || !full_name || !userRole) {
     return jsonResp(
@@ -150,52 +153,37 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Create the auth user directly (no email sent) with a throwaway password.
-  // The new user completes setup via the portal's "Forgot password?" flow,
-  // which sends them a single password-reset email from Supabase.
-  // This avoids the invite-email rate limit on bulk onboarding.
-  const throwawayPw =
-    crypto.randomUUID().replace(/-/g, "") +
-    "Aa1!" +
-    crypto.randomUUID().slice(0, 8);
-  const { data: created, error: createErr } =
-    await adminClient.auth.admin.createUser({
-      email,
-      email_confirm: true,
-      password: throwawayPw,
+  // Send the invite. inviteUserByEmail creates the auth user AND dispatches
+  // the invite email in a single call — the previous createUser + generateLink
+  // flow never triggered mail.send, which is why portal-initiated invites
+  // silently produced orphan auth rows with no email delivered.
+  const { data: invited, error: inviteErr } =
+    await adminClient.auth.admin.inviteUserByEmail(email, {
+      data: { full_name, role: userRole },
+      redirectTo,
     });
-  if (createErr || !created?.user) {
+  if (inviteErr || !invited?.user) {
     return jsonResp(
       {
         ok: false,
-        error: createErr?.message || "failed to create auth user",
+        error: inviteErr?.message || "failed to invite user",
       },
       500,
     );
   }
-  const authUserId = created.user.id;
+  const authUserId = invited.user.id;
 
-  // Best-effort: generate a password-recovery link the admin can share manually.
-  // If this fails (rate limit, email disabled, etc.), we continue silently —
-  // the user can always click "Forgot password?" on the login screen.
-  let recoveryLink: string | null = null;
-  try {
-    const linkOpts: Record<string, unknown> = {};
-    if (redirectTo) linkOpts.redirectTo = redirectTo;
-    const { data: linkData } = await adminClient.auth.admin.generateLink({
-      type: "recovery",
-      email,
-      options: linkOpts,
-    });
-    recoveryLink =
-      (linkData as any)?.properties?.action_link ||
-      (linkData as any)?.action_link ||
-      null;
-  } catch {
-    /* noop — setup link is optional */
-  }
+  // Helper: roll back the auth user if any subsequent step fails, so admin
+  // can retry without hitting "email already exists" on the next attempt.
+  const rollbackAuth = async () => {
+    try {
+      await adminClient.auth.admin.deleteUser(authUserId);
+    } catch {
+      /* noop */
+    }
+  };
 
-  // Insert public.users
+  // Insert public.users (links the Supabase auth identity to the portal user)
   const { data: userRow, error: userErr } = await adminClient
     .from("users")
     .insert({
@@ -209,12 +197,7 @@ Deno.serve(async (req) => {
     .select("*")
     .single();
   if (userErr || !userRow) {
-    // Roll back auth user so a retry isn't blocked by "email exists"
-    try {
-      await adminClient.auth.admin.deleteUser(authUserId);
-    } catch {
-      /* noop */
-    }
+    await rollbackAuth();
     const msg = userErr?.message || "";
     if (
       /users_ghl_user_id_key|duplicate key.*ghl_user_id/i.test(msg) ||
@@ -232,12 +215,23 @@ Deno.serve(async (req) => {
     return jsonResp({ ok: false, error: `users insert failed: ${msg}` }, 500);
   }
 
-  // Resolve location UUIDs
+  // Helper: roll back BOTH the public.users row and the auth user.
+  const rollbackAll = async () => {
+    try {
+      await adminClient.from("users").delete().eq("id", userRow.id);
+    } catch {
+      /* noop */
+    }
+    await rollbackAuth();
+  };
+
+  // Resolve location UUIDs for user_locations
   const { data: locs, error: locErr } = await adminClient
     .from("locations")
     .select("id, ghl_location_id")
     .in("ghl_location_id", locationGhlIds);
   if (locErr) {
+    await rollbackAll();
     return jsonResp(
       { ok: false, error: `locations lookup failed: ${locErr.message}` },
       500,
@@ -255,11 +249,11 @@ Deno.serve(async (req) => {
       .from("user_locations")
       .insert(ulRows);
     if (ulErr) {
+      await rollbackAll();
       return jsonResp(
         {
           ok: false,
           error: `user_locations insert failed: ${ulErr.message}`,
-          user: userRow,
         },
         500,
       );
@@ -268,9 +262,11 @@ Deno.serve(async (req) => {
 
   return jsonResp({
     ok: true,
+    success: true,
+    user_id: userRow.id,
+    email,
     user: userRow,
     linked_ghl_user_id: resolvedGhlUserId,
     invited_auth_user_id: authUserId,
-    recovery_link: recoveryLink,
   });
 });
