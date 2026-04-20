@@ -2627,6 +2627,131 @@
         );
       }
 
+      // ── Send Message Composer ──
+      // Replaces the browser's native sms: handler on the Text button.
+      // sms: would send from the rep's personal number and bypass GHL
+      // entirely (decision 2026-04-20). This composer routes through
+      // ghl-send-message so the message comes from GHL's location
+      // number, shows up in the Conversations thread, and is
+      // attributable. Handles both "reply in existing thread" and
+      // "start a new thread with a never-messaged lead" — the backend
+      // call is the same either way.
+      function SendMessageComposer({
+        contactName,
+        contactPhone,
+        submitting,
+        onSend,
+        onCancel,
+      }) {
+        const [msg, setMsg] = useState("");
+        const trimmed = msg.trim();
+        const canSubmit = trimmed.length > 0 && !submitting;
+        return (
+          <div style={{ ...MODAL_BACKDROP, zIndex: 320 }}>
+            <div className="fade-in" style={MODAL_CARD}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 10,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 500,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: T.textMuted,
+                    }}
+                  >
+                    Send SMS
+                  </div>
+                  <div
+                    style={{ ...MODAL_TITLE, marginTop: 4, lineHeight: 1.3 }}
+                  >
+                    {contactName || "(unknown contact)"}
+                  </div>
+                  {contactPhone && (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: T.textMuted,
+                        marginTop: 3,
+                      }}
+                    >
+                      {contactPhone}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={onCancel}
+                  disabled={submitting}
+                  style={MODAL_CLOSE(submitting)}
+                >
+                  ×
+                </button>
+              </div>
+              <textarea
+                value={msg}
+                onChange={(e) => setMsg(e.target.value)}
+                placeholder="Type your message…"
+                disabled={submitting}
+                rows={5}
+                autoFocus
+                onKeyDown={(e) => {
+                  // ⌘/Ctrl + Enter sends. Plain Enter is a newline so
+                  // reps can write multi-line texts without accident.
+                  if (
+                    (e.metaKey || e.ctrlKey) &&
+                    e.key === "Enter" &&
+                    canSubmit
+                  ) {
+                    e.preventDefault();
+                    onSend(trimmed);
+                  }
+                }}
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  border: `0.5px solid ${T.border}`,
+                  background: T.surface,
+                  color: T.text,
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                  outline: "none",
+                  fontFamily: "inherit",
+                  width: "100%",
+                  boxSizing: "border-box",
+                  resize: "vertical",
+                  minHeight: 100,
+                }}
+              />
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <button
+                  onClick={onCancel}
+                  disabled={submitting}
+                  className="btn-secondary"
+                  style={{ flex: 1, padding: "12px" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => onSend(trimmed)}
+                  disabled={!canSubmit}
+                  className="btn-primary"
+                  style={{ flex: 2, padding: "12px" }}
+                >
+                  {submitting ? "Sending…" : "Send"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       // ── Sale Modal ──
       // Fires when a user moves an opportunity to a counts_as_sale stage
       // (either a fresh close or an "Edit sale" action on an already-sold
@@ -2848,6 +2973,7 @@
         onBook,
         onToast,
         onChanged,
+        onOpenConversation,
       }) {
         const [opportunities, setOpportunities] = useState([]);
         const [stages, setStages] = useState([]);
@@ -2888,6 +3014,10 @@
         // bypassing the sessionStorage pending-call flow that was built
         // for the tap-to-call path.
         const [logCallOpen, setLogCallOpen] = useState(false);
+        // Text → in-portal SendMessageComposer → ghl-send-message. The
+        // browser's native sms: handler was bypassing GHL entirely.
+        const [composeOpen, setComposeOpen] = useState(false);
+        const [sendingMessage, setSendingMessage] = useState(false);
 
         const markCall = () =>
           markPendingCall({
@@ -3145,6 +3275,47 @@
           }
         };
 
+        const sendMessage = async (message) => {
+          if (!lead.contact_id) {
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: "Missing contact id — can't send from this lead",
+              });
+            }
+            return;
+          }
+          setSendingMessage(true);
+          try {
+            await callEdgeFunction("ghl-send-message", {
+              ghl_location_id: lead.location_id,
+              ghl_contact_id: lead.contact_id,
+              type: "SMS",
+              message,
+            });
+            if (onToast) {
+              onToast({ kind: "success", text: "Message sent." });
+            }
+            setComposeOpen(false);
+            if (onChanged) onChanged();
+            // Route to Conversations with this contact pre-selected so
+            // the rep sees the thread (or a "syncing" state for a
+            // brand-new conversation until the next cache cycle).
+            if (onOpenConversation) {
+              onOpenConversation(lead.contact_id);
+            }
+          } catch (e) {
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: e && e.message ? e.message : "Send failed",
+              });
+            }
+          } finally {
+            setSendingMessage(false);
+          }
+        };
+
         const canReassignAnyone =
           profile &&
           (profile.role === "admin" ||
@@ -3364,13 +3535,11 @@
                     onClick={markCall}
                   />
                 )}
-                {lead.phone && (
-                  <ActionBtn
-                    icon="💬"
-                    label="Text"
-                    href={`sms:${lead.phone}`}
-                  />
-                )}
+                <ActionBtn
+                  icon="💬"
+                  label="Text"
+                  onClick={() => setComposeOpen(true)}
+                />
                 <ActionBtn
                   icon="📞"
                   label="Log Call"
@@ -3777,6 +3946,17 @@
               ))}
             </div>
 
+            {composeOpen && (
+              <SendMessageComposer
+                contactName={lead.full_name}
+                contactPhone={lead.phone}
+                submitting={sendingMessage}
+                onSend={sendMessage}
+                onCancel={() => {
+                  if (!sendingMessage) setComposeOpen(false);
+                }}
+              />
+            )}
             {logCallOpen && (
               <CallOutcomeModal
                 profile={profile}
@@ -3963,6 +4143,8 @@
         aggregate,
         profile,
         onToast,
+        initialContactId,
+        onInitialConsumed,
       }) {
         const [rows, setRows] = useState([]);
         const [loading, setLoading] = useState(true);
@@ -3970,6 +4152,9 @@
         const [selected, setSelected] = useState(null);
         const [reply, setReply] = useState("");
         const [sending, setSending] = useState(false);
+        // In-memory filter for the list view. Mishawaka has 478
+        // conversations cached — scrolling is not viable.
+        const [listSearch, setListSearch] = useState("");
 
         const locIds = useMemo(() => {
           if (aggregate) {
@@ -4026,6 +4211,21 @@
         useEffect(() => {
           load();
         }, [load]);
+
+        // LeadDetail → Text → send → route here: if there's a
+        // conversation cached for this contact, open it. If not (brand-
+        // new thread, sync hasn't caught up yet), we leave the list
+        // visible so the rep isn't staring at a half-broken detail view
+        // — the toast already confirmed the send. Either way we consume
+        // the hint so a refresh doesn't re-trigger.
+        useEffect(() => {
+          if (!initialContactId) return;
+          if (loading) return;
+          const match = rows.find((r) => r.ghl_contact_id === initialContactId);
+          if (match) setSelected(match);
+          if (onInitialConsumed) onInitialConsumed();
+          // eslint-disable-next-line
+        }, [initialContactId, loading, rows]);
 
         const relTime = (iso) => {
           if (!iso) return "";
@@ -4360,12 +4560,75 @@
               style={{
                 fontSize: 12,
                 color: T.textMuted,
-                marginBottom: 14,
+                marginBottom: 12,
               }}
             >
               {aggregate
                 ? `${(accessibleLocations || []).length} locations · last 30 days`
                 : "Last 30 days"}
+            </div>
+
+            <div
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 5,
+                background: T.bg,
+                paddingBottom: 10,
+                marginBottom: 4,
+              }}
+            >
+              <div style={{ position: "relative" }}>
+                <span
+                  style={{
+                    position: "absolute",
+                    left: 14,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    fontSize: 14,
+                    color: T.textDim,
+                  }}
+                >
+                  🔍
+                </span>
+                <input
+                  value={listSearch}
+                  onChange={(e) => setListSearch(e.target.value)}
+                  placeholder="Search conversations by name…"
+                  style={{
+                    width: "100%",
+                    padding: "12px 40px 12px 42px",
+                    borderRadius: 12,
+                    border: `0.5px solid ${T.border}`,
+                    background: T.surface,
+                    color: T.text,
+                    fontSize: 14,
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+                {listSearch && (
+                  <button
+                    onClick={() => setListSearch("")}
+                    style={{
+                      position: "absolute",
+                      right: 10,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "transparent",
+                      border: "none",
+                      color: T.textMuted,
+                      fontSize: 18,
+                      cursor: "pointer",
+                      padding: "4px 8px",
+                      lineHeight: 1,
+                    }}
+                    aria-label="Clear search"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             </div>
 
             {error && (
@@ -4421,24 +4684,48 @@
               </div>
             )}
 
-            {!loading && rows.length === 0 && !error && (
-              <div
-                className="surface-card"
-                style={{
-                  padding: 40,
-                  textAlign: "center",
-                  color: T.textMuted,
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                }}
-              >
-                No conversations in the last 30 days. Run a sync from the Admin
-                → Health tab if this seems wrong.
-              </div>
-            )}
-
-            {!loading &&
-              rows.map((c) => {
+            {(() => {
+              if (loading) return null;
+              const q = listSearch.trim().toLowerCase();
+              const filtered = q
+                ? rows.filter((r) =>
+                    (r.contact_name || "").toLowerCase().includes(q),
+                  )
+                : rows;
+              if (rows.length === 0 && !error) {
+                return (
+                  <div
+                    className="surface-card"
+                    style={{
+                      padding: 40,
+                      textAlign: "center",
+                      color: T.textMuted,
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    No conversations in the last 30 days. Run a sync from the
+                    Admin → Health tab if this seems wrong.
+                  </div>
+                );
+              }
+              if (filtered.length === 0 && q) {
+                return (
+                  <div
+                    className="surface-card"
+                    style={{
+                      padding: 40,
+                      textAlign: "center",
+                      color: T.textMuted,
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    No conversations match "{listSearch}".
+                  </div>
+                );
+              }
+              return filtered.map((c) => {
                 const initial = (c.contact_name || "?")[0].toUpperCase();
                 const unread = Number(c.unread_count) || 0;
                 return (
@@ -4544,7 +4831,8 @@
                     )}
                   </div>
                 );
-              })}
+              });
+            })()}
           </div>
         );
       }
@@ -12104,6 +12392,12 @@
           () => restoredNav?.drilledRep || null,
         );
         const isSalesRep = profile.role === "sales_rep";
+        // Ephemeral "open this contact's conversation on next render of
+        // ConversationsScreen" hint. Set when LeadDetail → Text send
+        // succeeds; consumed (cleared) by ConversationsScreen once it's
+        // picked the matching row. Not persisted in nav sessionStorage.
+        const [pendingConversationContact, setPendingConversationContact] =
+          useState(null);
 
         // Persist the navigation cursor on every change so a token refresh
         // (which no longer remounts us thanks to the App listener fix, but
@@ -12268,6 +12562,11 @@
                 }
                 onToast={showToast}
                 onChanged={bumpCallLogVersion}
+                onOpenConversation={(contactId) => {
+                  setPendingConversationContact(contactId);
+                  setSelectedLead(null);
+                  setScreen("conversations");
+                }}
               />
             );
           let dashboardEl;
@@ -12346,6 +12645,8 @@
                   aggregate={aggregateLists}
                   profile={profile}
                   onToast={showToast}
+                  initialContactId={pendingConversationContact}
+                  onInitialConsumed={() => setPendingConversationContact(null)}
                 />
               );
             case "appointments":
