@@ -3223,12 +3223,299 @@
                 Forgot password?
               </button>
             </form>
+            <DidntGetInviteHint />
           </div>
         );
       }
 
-      // ── Gate Screen (pending access / no locations) ──
-      function GateScreen({ title, body, onLogout }) {
+      // Static helper text on the login screen. Intentionally NOT a button
+      // that triggers resetPasswordForEmail — that auto-hit Supabase's
+      // per-user email rate limit the day we shipped invites. Users who
+      // never received their invite need an admin to re-send.
+      function DidntGetInviteHint() {
+        const [open, setOpen] = useState(false);
+        return (
+          <div
+            style={{
+              marginTop: 22,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="btn-ghost"
+              style={{ fontSize: 12 }}
+            >
+              Didn't get your invite?
+            </button>
+            {open && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: T.textMuted,
+                  textAlign: "center",
+                  lineHeight: 1.5,
+                  maxWidth: 300,
+                  padding: "0 12px",
+                }}
+              >
+                Contact your admin to resend.
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      // ── Set Password Screen (invite acceptance + password recovery) ──
+      // The user lands here after clicking a Supabase invite-email link or
+      // a reset-password link. The session is already established via
+      // detectSessionInUrl; this screen forces them to pick a password
+      // before they can reach the rest of the app.
+      function SetPasswordScreen({ session, flowType, onComplete }) {
+        const [password, setPassword] = useState("");
+        const [confirm, setConfirm] = useState("");
+        const [submitting, setSubmitting] = useState(false);
+        const [error, setError] = useState("");
+
+        const email = session?.user?.email || "";
+        const isInvite = flowType === "invite";
+        const hasMinLen = password.length >= 8;
+        const hasNumber = /\d/.test(password);
+        const hasLetter = /[a-zA-Z]/.test(password);
+        const matches = password.length > 0 && password === confirm;
+        const canSubmit =
+          hasMinLen && hasNumber && hasLetter && matches && !submitting;
+
+        const submit = async (e) => {
+          e.preventDefault();
+          if (!canSubmit) return;
+          setSubmitting(true);
+          setError("");
+          try {
+            const { error: err } = await window.supabase.auth.updateUser({
+              password,
+            });
+            if (err) {
+              setError(err.message || "Failed to set password");
+              setSubmitting(false);
+              return;
+            }
+            sessionStorage.removeItem("aira_pending_password_flow");
+            onComplete();
+          } catch (err) {
+            setError(
+              err && err.message ? err.message : "Failed to set password",
+            );
+            setSubmitting(false);
+          }
+        };
+
+        const inputStyle = {
+          padding: "12px 14px",
+          borderRadius: 10,
+          border: `0.5px solid ${T.border}`,
+          background: T.surface,
+          color: T.text,
+          fontSize: 15,
+          outline: "none",
+          transition: "border-color 160ms ease",
+        };
+        const labelStyle = {
+          fontSize: 10,
+          fontWeight: 500,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: T.textMuted,
+        };
+
+        const Requirement = ({ met, label }) => (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              color: met ? T.text : T.textMuted,
+              lineHeight: 1.4,
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: met ? T.green : T.textDim,
+                flexShrink: 0,
+              }}
+            />
+            {label}
+          </div>
+        );
+
+        return (
+          <div
+            style={{
+              maxWidth: 440,
+              margin: "0 auto",
+              minHeight: "100vh",
+              background: T.bg,
+              padding: "72px 24px 40px",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                marginBottom: 32,
+              }}
+            >
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 14,
+                  background: T.airaBlue,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 26,
+                  fontWeight: 500,
+                  color: "#ffffff",
+                  fontFamily: "'Outfit',sans-serif",
+                  letterSpacing: "-0.01em",
+                  marginBottom: 18,
+                }}
+              >
+                A
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 500,
+                  color: T.textHi,
+                  fontFamily: "'Outfit',sans-serif",
+                  letterSpacing: "-0.01em",
+                  textAlign: "center",
+                  lineHeight: 1.3,
+                }}
+              >
+                {isInvite
+                  ? "Welcome to the Aira Operator Portal"
+                  : "Reset your password"}
+              </div>
+              {email && (
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: T.textMuted,
+                    textAlign: "center",
+                    marginTop: 8,
+                  }}
+                >
+                  Setting password for{" "}
+                  <span style={{ color: T.text, fontWeight: 500 }}>
+                    {email}
+                  </span>
+                </div>
+              )}
+            </div>
+            <form
+              onSubmit={submit}
+              className="surface-card"
+              style={{
+                padding: 24,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              <label style={labelStyle}>New password</label>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                style={inputStyle}
+              />
+              <label style={{ ...labelStyle, marginTop: 4 }}>
+                Confirm password
+              </label>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder="••••••••"
+                style={inputStyle}
+              />
+              <div
+                style={{
+                  marginTop: 4,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: T.surfaceAlt,
+                  border: `0.5px solid ${T.border}`,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                <Requirement met={hasMinLen} label="At least 8 characters" />
+                <Requirement met={hasLetter} label="At least 1 letter" />
+                <Requirement met={hasNumber} label="At least 1 number" />
+                <Requirement met={matches} label="Passwords match" />
+              </div>
+              {error && (
+                <div
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    background: T.surface,
+                    border: `0.5px solid ${T.border}`,
+                    borderLeft: `3px solid ${T.red}`,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    color: T.text,
+                    fontSize: 13,
+                    fontWeight: 500,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: T.red,
+                      flexShrink: 0,
+                    }}
+                  />
+                  {error}
+                </div>
+              )}
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={!canSubmit}
+                style={{ marginTop: 8, padding: "14px 20px" }}
+              >
+                {submitting ? "Saving…" : "Set Password & Continue"}
+              </button>
+            </form>
+          </div>
+        );
+      }
+
+      // ── Gate Screen (pending access / no locations / expired invite) ──
+      function GateScreen({ title, body, onLogout, buttonLabel }) {
         return (
           <div
             style={{
@@ -3287,7 +3574,7 @@
               {body}
             </div>
             <button className="btn-secondary" onClick={onLogout}>
-              Log out
+              {buttonLabel || "Log out"}
             </button>
           </div>
         );
@@ -10150,6 +10437,46 @@
         );
       }
 
+      // Parse the URL hash exactly once on boot, before anything else.
+      // Supabase-js v2 auto-consumes the hash when detectSessionInUrl is true,
+      // so we have to snapshot it synchronously or lose the flow type.
+      //
+      // We also check sessionStorage in case the user refreshes mid-flow: the
+      // token has already been exchanged into a persisted session at that
+      // point, so the hash is gone, but we want to keep them on SetPassword
+      // until they actually submit.
+      const PENDING_FLOW_KEY = "aira_pending_password_flow";
+      function consumeInviteHash() {
+        const raw = window.location.hash || "";
+        const hash = raw.startsWith("#") ? raw.slice(1) : raw;
+        let hashType = null;
+        let hashError = null;
+        let hashErrorDescription = null;
+        if (hash) {
+          const params = new URLSearchParams(hash);
+          hashType = params.get("type");
+          hashError = params.get("error") || params.get("error_code");
+          hashErrorDescription = params.get("error_description");
+          window.history.replaceState(
+            null,
+            "",
+            window.location.pathname + window.location.search,
+          );
+        }
+        if (hashType === "invite" || hashType === "recovery") {
+          sessionStorage.setItem(PENDING_FLOW_KEY, hashType);
+        }
+        const pending = sessionStorage.getItem(PENDING_FLOW_KEY);
+        return {
+          flowType:
+            hashType === "invite" || hashType === "recovery"
+              ? hashType
+              : pending,
+          hashError,
+          hashErrorDescription,
+        };
+      }
+
       // ── Root App with auth gate ──
       function App() {
         const [state, setState] = useState({ status: "loading" });
@@ -10212,7 +10539,23 @@
         useEffect(() => {
           let mounted = true;
           let unsub = () => {};
+          // Snapshot the hash BEFORE any async work — Supabase-js will
+          // swallow it as soon as the client is available.
+          const inviteCtx = consumeInviteHash();
+
           const start = async () => {
+            // Expired / access_denied invite → dedicated screen, skip the
+            // usual session flow so the user isn't bounced to a login they
+            // can't pass.
+            if (inviteCtx.hashError) {
+              sessionStorage.removeItem(PENDING_FLOW_KEY);
+              setState({
+                status: "invite-expired",
+                description: inviteCtx.hashErrorDescription || "",
+              });
+              return;
+            }
+
             let tries = 0;
             while (!window.supabase && tries < 150) {
               await new Promise((r) => setTimeout(r, 30));
@@ -10227,17 +10570,43 @@
               data: { session },
             } = await window.supabase.auth.getSession();
             if (!mounted) return;
-            if (!session) setState({ status: "login" });
-            else await loadProfile(session);
+
+            // Invite / recovery: hold them on SetPasswordScreen until they
+            // pick a password. Skip loadProfile entirely — the normal
+            // dashboard shouldn't be reachable until the password is set.
+            if (session && inviteCtx.flowType) {
+              setState({
+                status: "set-password",
+                session,
+                flowType: inviteCtx.flowType,
+              });
+            } else if (!session) {
+              setState({ status: "login" });
+            } else {
+              await loadProfile(session);
+            }
+
             const sub = window.supabase.auth.onAuthStateChange(
               (event, sess) => {
                 if (!mounted) return;
                 if (event === "SIGNED_OUT") {
                   localStorage.removeItem("aira_selected_location_id");
+                  sessionStorage.removeItem(PENDING_FLOW_KEY);
                   setState({ status: "login" });
                   return;
                 }
                 if (event === "SIGNED_IN" && sess) {
+                  const pending =
+                    sessionStorage.getItem(PENDING_FLOW_KEY) ||
+                    inviteCtx.flowType;
+                  if (pending) {
+                    setState({
+                      status: "set-password",
+                      session: sess,
+                      flowType: pending,
+                    });
+                    return;
+                  }
                   setState({ status: "loading" });
                   loadProfile(sess);
                 }
@@ -10272,6 +10641,32 @@
             return <Splash />;
           case "login":
             return <LoginScreen />;
+          case "set-password":
+            return (
+              <SetPasswordScreen
+                session={state.session}
+                flowType={state.flowType}
+                onComplete={() => {
+                  setState({ status: "loading" });
+                  (async () => {
+                    const {
+                      data: { session },
+                    } = await window.supabase.auth.getSession();
+                    if (session) await loadProfile(session);
+                    else setState({ status: "login" });
+                  })();
+                }}
+              />
+            );
+          case "invite-expired":
+            return (
+              <GateScreen
+                title="Invite link expired"
+                body="This invite link has expired. Ask your admin to resend."
+                onLogout={() => setState({ status: "login" })}
+                buttonLabel="Back to sign in"
+              />
+            );
           case "pending":
             return (
               <GateScreen
