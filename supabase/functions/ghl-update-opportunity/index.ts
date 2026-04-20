@@ -79,45 +79,61 @@ Deno.serve(async (req) => {
   const requestedStatus =
     typeof body?.status === "string" ? body.status.trim().toLowerCase() : "";
 
-  // Sale-value fields. Only monetary_value is mirrored to GHL
-  // (monetaryValue); is_pif + pif_amount live in public.opportunities
-  // only — GHL has no native PIF tracking. `undefined` means "don't
-  // touch"; `null` is a legitimate clear for is_pif + pif_amount when
-  // an edit demotes a prior PIF sale.
-  const monetary_value: number | null | undefined =
+  // Sale-value fields per the Gross + MRR split (2026-04-20 decision).
+  // gross_sale = total cash at close (enrollment + first month + PIF);
+  // mrr = the monthly recurring membership rate. Both live on
+  // public.opportunities; mrr is ALSO mirrored into GHL's monetaryValue
+  // because that's what GHL's own UI has always displayed.
+  // `undefined` = "don't touch" on all of these; `null` is an explicit
+  // clear (e.g. edit demoting a prior PIF sale).
+  const gross_sale: number | null | undefined =
+    body?.gross_sale === undefined || body?.gross_sale === null
+      ? body?.gross_sale
+      : Number(body.gross_sale);
+  if (
+    gross_sale !== undefined &&
+    gross_sale !== null &&
+    (!Number.isFinite(gross_sale) || gross_sale < 0)
+  ) {
+    return jsonResp(
+      { ok: false, error: "gross_sale must be a non-negative number" },
+      400,
+    );
+  }
+  const mrr: number | null | undefined =
+    body?.mrr === undefined || body?.mrr === null
+      ? body?.mrr
+      : Number(body.mrr);
+  if (mrr !== undefined && mrr !== null && (!Number.isFinite(mrr) || mrr < 0)) {
+    return jsonResp(
+      { ok: false, error: "mrr must be a non-negative number" },
+      400,
+    );
+  }
+  // Legacy: monetary_value still accepted (old callers). If the caller
+  // didn't send mrr but did send monetary_value, treat it as mrr.
+  const monetary_value_legacy: number | null | undefined =
     body?.monetary_value === undefined || body?.monetary_value === null
       ? body?.monetary_value
       : Number(body.monetary_value);
   if (
-    monetary_value !== undefined &&
-    monetary_value !== null &&
-    (!Number.isFinite(monetary_value) || monetary_value < 0)
+    monetary_value_legacy !== undefined &&
+    monetary_value_legacy !== null &&
+    (!Number.isFinite(monetary_value_legacy) || monetary_value_legacy < 0)
   ) {
     return jsonResp(
       { ok: false, error: "monetary_value must be a non-negative number" },
       400,
     );
   }
+  const effective_mrr: number | null | undefined =
+    mrr !== undefined ? mrr : monetary_value_legacy;
   const is_pif: boolean | null | undefined =
     typeof body?.is_pif === "boolean"
       ? body.is_pif
       : body?.is_pif === null
         ? null
         : undefined;
-  const pif_amount: number | null | undefined =
-    body?.pif_amount === undefined || body?.pif_amount === null
-      ? body?.pif_amount
-      : Number(body.pif_amount);
-  if (
-    pif_amount !== undefined &&
-    pif_amount !== null &&
-    (!Number.isFinite(pif_amount) || pif_amount < 0)
-  ) {
-    return jsonResp(
-      { ok: false, error: "pif_amount must be a non-negative number" },
-      400,
-    );
-  }
 
   if (!opportunity_id) {
     return jsonResp({ ok: false, error: "opportunity_id is required" }, 400);
@@ -125,15 +141,15 @@ Deno.serve(async (req) => {
   if (
     !pipeline_stage_id &&
     !requestedStatus &&
-    monetary_value === undefined &&
-    is_pif === undefined &&
-    pif_amount === undefined
+    gross_sale === undefined &&
+    effective_mrr === undefined &&
+    is_pif === undefined
   ) {
     return jsonResp(
       {
         ok: false,
         error:
-          "pipeline_stage_id, status, monetary_value, is_pif, or pif_amount must be provided",
+          "pipeline_stage_id, status, gross_sale, mrr, or is_pif must be provided",
       },
       400,
     );
@@ -290,11 +306,12 @@ Deno.serve(async (req) => {
   if (actingGhlUserId) {
     ghlBody.assignedTo = actingGhlUserId;
   }
-  // GHL's only sale-value field is monetaryValue (monthly membership
-  // price). is_pif + pif_amount stay portal-only because GHL has no
-  // equivalent — the sync never overwrites them.
-  if (monetary_value !== undefined) {
-    ghlBody.monetaryValue = monetary_value;
+  // GHL's only sale-value field is monetaryValue (monthly price). We
+  // mirror mrr into it so GHL's own UI stays meaningful. gross_sale +
+  // is_pif stay portal-only because GHL has no equivalent; the sync
+  // never overwrites them.
+  if (effective_mrr !== undefined) {
+    ghlBody.monetaryValue = effective_mrr;
   }
 
   const ghlRes = await fetch(
@@ -337,24 +354,27 @@ Deno.serve(async (req) => {
   }
   if (requestedStatus) cachePatch.status = requestedStatus;
   if (actingGhlUserId) cachePatch.assigned_to = actingGhlUserId;
-  // Sale-value mirror — monetary_value survives from GHL, is_pif +
-  // pif_amount are portal-only. sold_at is stamped whenever monetary_value
-  // is set in this call (either a fresh close or an edit that sharpens
-  // the original close's data — we overwrite either way; the old value
-  // is the one that was wrong).
-  if (monetary_value !== undefined) {
-    cachePatch.monetary_value = monetary_value;
+  // Sale-value mirror: gross_sale + mrr per the 2026-04-20 split,
+  // plus monetary_value kept in sync with mrr for backwards compat
+  // with any pre-split callers. sold_at is stamped whenever gross_sale
+  // OR mrr is set — a fresh close or an edit that sharpens either
+  // number. We overwrite either way; the old value was the wrong one.
+  if (gross_sale !== undefined) cachePatch.gross_sale = gross_sale;
+  if (effective_mrr !== undefined) {
+    cachePatch.mrr = effective_mrr;
+    cachePatch.monetary_value = effective_mrr;
+  }
+  if (gross_sale !== undefined || effective_mrr !== undefined) {
     cachePatch.sold_at = new Date().toISOString();
   }
   if (is_pif !== undefined) cachePatch.is_pif = is_pif;
-  if (pif_amount !== undefined) cachePatch.pif_amount = pif_amount;
 
   const { data: updated, error: updateErr } = await adminClient
     .from("opportunities")
     .update(cachePatch)
     .eq("ghl_opportunity_id", opportunity_id)
     .select(
-      "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, status, name, assigned_to, monetary_value, is_pif, pif_amount, sold_at, updated_at_ghl",
+      "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, status, name, assigned_to, monetary_value, gross_sale, mrr, is_pif, sold_at, updated_at_ghl",
     )
     .maybeSingle();
   if (updateErr) {

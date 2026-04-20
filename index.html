@@ -1153,6 +1153,7 @@
         hideLeaderboard,
         selectedLocationId,
         callLogVersion,
+        onSelectRep,
       }) {
         const [kpis, setKpis] = useState(null);
         const [leaderboard, setLeaderboard] = useState([]);
@@ -1168,8 +1169,11 @@
               window.supabase.rpc("dashboard_kpis", {
                 p_ghl_location_id: selectedLocationId,
               }),
+              // rep_leaderboard takes text[] now — scoped to this one
+              // gym. Returns activity: calls / appts / sales / gross /
+              // mrr. Sort comes pre-applied from the RPC (mrr desc).
               window.supabase.rpc("rep_leaderboard", {
-                p_ghl_location_id: selectedLocationId,
+                p_ghl_location_ids: [selectedLocationId],
               }),
             ]);
             if (kpisRes.error) throw kpisRes.error;
@@ -1191,6 +1195,9 @@
                     calls_today_connected: 0,
                     calls_today_no_answer: 0,
                     calls_today_voicemail: 0,
+                    missing_sale_value_count: 0,
+                    gross_mtd: 0,
+                    mrr_mtd: 0,
                   },
             );
             setLeaderboard(lbRes.data || []);
@@ -1231,6 +1238,8 @@
         const sales = Number(k.sales) || 0;
         const revenue = Number(k.revenue) || 0;
         const missingSaleValue = Number(k.missing_sale_value_count) || 0;
+        const grossMtd = Number(k.gross_mtd) || 0;
+        const mrrMtd = Number(k.mrr_mtd) || 0;
         const callsToday = Number(k.calls_today) || 0;
         const callsConnected = Number(k.calls_today_connected) || 0;
         const callsNoAnswer = Number(k.calls_today_no_answer) || 0;
@@ -1505,6 +1514,87 @@
               </div>
             )}
 
+            {/* Sales This Month — gross + MRR side by side. Replaces
+                the implicit "revenue = monetary_value sum" the old
+                Dashboard surfaced. */}
+            <div
+              className="surface-card"
+              style={{
+                padding: 20,
+                marginBottom: 18,
+                display: "flex",
+                gap: 24,
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 500,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: T.textMuted,
+                    marginBottom: 6,
+                  }}
+                >
+                  Gross this month
+                </div>
+                <div
+                  style={{
+                    fontSize: 26,
+                    fontWeight: 500,
+                    color: T.textHi,
+                    fontFamily: "'Outfit',sans-serif",
+                    letterSpacing: "-0.02em",
+                    lineHeight: 1,
+                  }}
+                >
+                  {loading ? (
+                    <SkelBar w={90} h={26} />
+                  ) : (
+                    `$${grossMtd.toLocaleString()}`
+                  )}
+                </div>
+              </div>
+              <div
+                style={{
+                  width: 1,
+                  background: T.border,
+                  alignSelf: "stretch",
+                }}
+              />
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 500,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: T.textMuted,
+                    marginBottom: 6,
+                  }}
+                >
+                  MRR sold this month
+                </div>
+                <div
+                  style={{
+                    fontSize: 26,
+                    fontWeight: 500,
+                    color: T.textHi,
+                    fontFamily: "'Outfit',sans-serif",
+                    letterSpacing: "-0.02em",
+                    lineHeight: 1,
+                  }}
+                >
+                  {loading ? (
+                    <SkelBar w={90} h={26} />
+                  ) : (
+                    `$${mrrMtd.toLocaleString()}`
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div
               className="surface-card"
               style={{
@@ -1645,33 +1735,76 @@
                       textAlign: "center",
                       color: T.textMuted,
                       fontSize: 13,
-                      lineHeight: 1.5,
+                      lineHeight: 1.55,
                     }}
                   >
-                    No sales yet this period.
+                    No logged activity yet this period.
                     <br />
-                    Reps are now auto-assigned when they mark a lead Sold or
-                    Booked. The leaderboard will populate as stages change.
+                    Reps appear here when they log a call, book an appointment,
+                    or close a sale in the portal. Stage changes that aren't
+                    Sold or Booked don't count.
                   </div>
                 )}
                 {!loading &&
                   leaderboard.map((r, i) => {
+                    const rcalls = Number(r.calls) || 0;
+                    const rappts = Number(r.appts) || 0;
                     const rsales = Number(r.sales) || 0;
-                    const rrev = Number(r.revenue) || 0;
-                    const ravg = Math.round(Number(r.avg_sale) || 0);
-                    const cr = Math.round(Number(r.close_rate) || 0);
+                    const rgross = Number(r.gross) || 0;
+                    const rmrr = Number(r.mrr) || 0;
                     const display = r.full_name || "Unknown";
                     const initial = (display[0] || "?").toUpperCase();
-                    const crOk = cr >= 40;
+                    const rowKey =
+                      r.ghl_user_id ||
+                      r.user_id ||
+                      `row-${r.ghl_location_id}-${i}`;
+                    const statCellStyle = {
+                      textAlign: "center",
+                      minWidth: 44,
+                    };
+                    const numCellStyle = {
+                      fontSize: 14,
+                      fontWeight: 500,
+                      color: T.textHi,
+                      fontFamily: "'Outfit',sans-serif",
+                      letterSpacing: "-0.01em",
+                    };
+                    const labelCellStyle = {
+                      fontSize: 9,
+                      color: T.textDim,
+                      letterSpacing: "0.1em",
+                      marginTop: 2,
+                    };
+                    const tappable = !!onSelectRep && !!r.user_id;
                     return (
                       <div
-                        key={r.ghl_user_id || `row-${i}`}
+                        key={rowKey}
+                        onClick={
+                          tappable
+                            ? () =>
+                                onSelectRep({
+                                  user_id: r.user_id,
+                                  full_name: r.full_name,
+                                  ghl_user_id: r.ghl_user_id,
+                                  role: r.role,
+                                })
+                            : undefined
+                        }
                         style={{
                           display: "flex",
                           alignItems: "center",
                           padding: "14px 24px",
                           borderTop: `0.5px solid ${T.border}`,
-                          gap: 14,
+                          gap: 12,
+                          cursor: tappable ? "pointer" : "default",
+                          transition: "background 160ms ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (tappable)
+                            e.currentTarget.style.background = T.surfaceHover;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
                         }}
                       >
                         <div
@@ -1716,108 +1849,39 @@
                             {titleCaseRole(r.role)}
                           </div>
                         </div>
-                        <div style={{ textAlign: "center", minWidth: 40 }}>
-                          <div
-                            style={{
-                              fontSize: 16,
-                              fontWeight: 500,
-                              color: T.textHi,
-                              fontFamily: "'Outfit',sans-serif",
-                              letterSpacing: "-0.01em",
-                            }}
-                          >
-                            {rsales}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 9,
-                              color: T.textDim,
-                              letterSpacing: "0.1em",
-                              marginTop: 2,
-                            }}
-                          >
-                            SALES
-                          </div>
+                        <div style={statCellStyle}>
+                          <div style={numCellStyle}>{rcalls}</div>
+                          <div style={labelCellStyle}>CALLS</div>
                         </div>
-                        <div style={{ textAlign: "center", minWidth: 48 }}>
-                          <div
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 5,
-                              fontFamily: "'Outfit',sans-serif",
-                              fontSize: 14,
-                              fontWeight: 500,
-                              color: T.textHi,
-                              letterSpacing: "-0.01em",
-                            }}
-                          >
-                            <span
-                              style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: "50%",
-                                background: crOk ? T.green : T.red,
-                              }}
-                            />
-                            {cr}%
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 9,
-                              color: T.textDim,
-                              letterSpacing: "0.1em",
-                              marginTop: 2,
-                            }}
-                          >
-                            CLOSE
-                          </div>
+                        <div style={statCellStyle}>
+                          <div style={numCellStyle}>{rappts}</div>
+                          <div style={labelCellStyle}>APPTS</div>
                         </div>
-                        <div style={{ textAlign: "center", minWidth: 60 }}>
-                          <div
-                            style={{
-                              fontSize: 14,
-                              fontWeight: 500,
-                              color: T.textHi,
-                              fontFamily: "'Outfit',sans-serif",
-                              letterSpacing: "-0.01em",
-                            }}
-                          >
-                            ${rrev.toLocaleString()}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 9,
-                              color: T.textDim,
-                              letterSpacing: "0.1em",
-                              marginTop: 2,
-                            }}
-                          >
-                            MRR
-                          </div>
+                        <div style={statCellStyle}>
+                          <div style={numCellStyle}>{rsales}</div>
+                          <div style={labelCellStyle}>SALES</div>
                         </div>
-                        <div style={{ textAlign: "center", minWidth: 52 }}>
+                        <div style={{ ...statCellStyle, minWidth: 60 }}>
                           <div
                             style={{
-                              fontSize: 13,
-                              fontWeight: 500,
-                              color: ravg > 0 ? T.textHi : T.textDim,
-                              fontFamily: "'Outfit',sans-serif",
-                              letterSpacing: "-0.01em",
+                              ...numCellStyle,
+                              color: rgross > 0 ? T.textHi : T.textDim,
                             }}
                           >
-                            {ravg > 0 ? `$${ravg.toLocaleString()}` : "—"}
+                            {rgross > 0 ? `$${rgross.toLocaleString()}` : "—"}
                           </div>
+                          <div style={labelCellStyle}>GROSS</div>
+                        </div>
+                        <div style={{ ...statCellStyle, minWidth: 56 }}>
                           <div
                             style={{
-                              fontSize: 9,
-                              color: T.textDim,
-                              letterSpacing: "0.1em",
-                              marginTop: 2,
+                              ...numCellStyle,
+                              color: rmrr > 0 ? T.textHi : T.textDim,
                             }}
                           >
-                            AVG
+                            {rmrr > 0 ? `$${rmrr.toLocaleString()}` : "—"}
                           </div>
+                          <div style={labelCellStyle}>MRR</div>
                         </div>
                       </div>
                     );
@@ -1884,7 +1948,7 @@
               window.supabase
                 .from("opportunities")
                 .select(
-                  "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, assigned_to, is_pif, pif_amount, sold_at, source, created_at_ghl, updated_at_ghl",
+                  "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, gross_sale, mrr, is_pif, sold_at, assigned_to, source, created_at_ghl, updated_at_ghl",
                 )
                 .in("ghl_location_id", locIds)
                 .order("updated_at_ghl", {
@@ -1996,8 +2060,9 @@
                 opp_status: o.status,
                 monetary_value:
                   o.monetary_value != null ? Number(o.monetary_value) : null,
+                gross_sale: o.gross_sale != null ? Number(o.gross_sale) : null,
+                mrr: o.mrr != null ? Number(o.mrr) : null,
                 is_pif: !!o.is_pif,
-                pif_amount: o.pif_amount != null ? Number(o.pif_amount) : null,
                 sold_at: o.sold_at || null,
                 contact_source: c.source,
                 opp_source: o.source,
@@ -2565,32 +2630,35 @@
       // ── Sale Modal ──
       // Fires when a user moves an opportunity to a counts_as_sale stage
       // (either a fresh close or an "Edit sale" action on an already-sold
-      // lead). Captures the real monthly membership price + optional PIF
-      // attach so the ADPS / dollars-on-the-table math runs on actual
-      // numbers, not the $220 Aira benchmark.
+      // lead). Captures two distinct dollar values so the business can
+      // see heavy-PIF vs discounted-MRR patterns the old single-field
+      // model hid: Gross Sale = total cash at close, MRR = monthly
+      // recurring membership rate going forward.
       function SaleModal({
         title,
         soldByName,
-        initialAmount,
+        initialGross,
+        initialMrr,
         initialIsPif,
-        initialPifAmount,
         submitting,
         onConfirm,
         onCancel,
       }) {
-        const [amount, setAmount] = useState(
-          initialAmount != null ? String(initialAmount) : "220",
+        const [gross, setGross] = useState(
+          initialGross != null ? String(initialGross) : "",
+        );
+        const [mrr, setMrr] = useState(
+          initialMrr != null ? String(initialMrr) : "220",
         );
         const [isPif, setIsPif] = useState(!!initialIsPif);
-        const [pifAmount, setPifAmount] = useState(
-          initialPifAmount != null ? String(initialPifAmount) : "997",
-        );
-        const numAmount = Number(amount);
-        const numPif = Number(pifAmount);
+        const numGross = Number(gross);
+        const numMrr = Number(mrr);
         const valid =
-          Number.isFinite(numAmount) &&
-          numAmount >= 0 &&
-          (!isPif || (Number.isFinite(numPif) && numPif >= 0));
+          Number.isFinite(numGross) &&
+          numGross >= 0 &&
+          Number.isFinite(numMrr) &&
+          numMrr >= 0 &&
+          gross.trim().length > 0;
 
         const inputStyle = {
           padding: "12px 14px",
@@ -2632,14 +2700,38 @@
                 </button>
               </div>
               <div>
-                <label style={labelStyle}>Sale amount ($ / mo)</label>
+                <label style={labelStyle}>Gross Sale (cash at close)</label>
                 <input
                   type="number"
                   inputMode="decimal"
                   min={0}
                   step="1"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  value={gross}
+                  onChange={(e) => setGross(e.target.value)}
+                  disabled={submitting}
+                  placeholder="1296"
+                  style={{ ...inputStyle, marginTop: 6 }}
+                />
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: T.textMuted,
+                    marginTop: 6,
+                  }}
+                >
+                  Total paid today — enrollment fee, first month, and PIF (if
+                  any). This is the dollars collected.
+                </div>
+              </div>
+              <div>
+                <label style={labelStyle}>MRR (monthly membership rate)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="1"
+                  value={mrr}
+                  onChange={(e) => setMrr(e.target.value)}
                   disabled={submitting}
                   style={{ ...inputStyle, marginTop: 6 }}
                 />
@@ -2650,18 +2742,20 @@
                     marginTop: 6,
                   }}
                 >
-                  Monthly membership price. Aira standard is $220.
+                  The monthly membership rate going forward. Aira standard is
+                  $220.
                 </div>
               </div>
               <label
                 style={{
                   display: "flex",
-                  alignItems: "center",
+                  alignItems: "flex-start",
                   gap: 8,
                   fontSize: 14,
                   color: T.text,
                   cursor: "pointer",
                   padding: "8px 0",
+                  lineHeight: 1.4,
                 }}
               >
                 <input
@@ -2669,25 +2763,22 @@
                   checked={isPif}
                   onChange={(e) => setIsPif(e.target.checked)}
                   disabled={submitting}
-                  style={{ accentColor: T.airaBlue }}
+                  style={{ accentColor: T.airaBlue, marginTop: 3 }}
                 />
-                Paid in Full?
+                <span>
+                  Was this a PIF?
+                  <span
+                    style={{
+                      display: "block",
+                      fontSize: 11,
+                      color: T.textMuted,
+                      marginTop: 2,
+                    }}
+                  >
+                    Paid in Full — tracks toward the 20% PIF attach benchmark.
+                  </span>
+                </span>
               </label>
-              {isPif && (
-                <div>
-                  <label style={labelStyle}>PIF amount ($)</label>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    step="1"
-                    value={pifAmount}
-                    onChange={(e) => setPifAmount(e.target.value)}
-                    disabled={submitting}
-                    style={{ ...inputStyle, marginTop: 6 }}
-                  />
-                </div>
-              )}
               <div
                 style={{
                   padding: "10px 12px",
@@ -2728,9 +2819,9 @@
                 <button
                   onClick={() =>
                     onConfirm({
-                      monetary_value: numAmount,
+                      gross_sale: numGross,
+                      mrr: numMrr,
                       is_pif: isPif,
-                      pif_amount: isPif ? numPif : null,
                     })
                   }
                   disabled={submitting || !valid}
@@ -2774,13 +2865,19 @@
         const [assignOpen, setAssignOpen] = useState(false);
         const [savingAssign, setSavingAssign] = useState(false);
         // Sale-value state. currentSale reflects the latest sale data we
-        // know about for THIS opportunity; seeded from lead.monetary_value
-        // on mount and overwritten on every successful sale/edit.
+        // know about for THIS opportunity; seeded from the composed lead
+        // row and overwritten on every successful sale/edit. gross_sale
+        // + mrr per the 2026-04-20 split; if only legacy monetary_value
+        // is present (pre-split rows) we treat it as mrr.
         const [currentSale, setCurrentSale] = useState({
-          monetary_value:
-            lead.monetary_value != null ? Number(lead.monetary_value) : null,
+          gross_sale: lead.gross_sale != null ? Number(lead.gross_sale) : null,
+          mrr:
+            lead.mrr != null
+              ? Number(lead.mrr)
+              : lead.monetary_value != null
+                ? Number(lead.monetary_value)
+                : null,
           is_pif: !!lead.is_pif,
-          pif_amount: lead.pif_amount != null ? Number(lead.pif_amount) : null,
           sold_at: lead.sold_at || null,
         });
         // { pendingStage, editMode } → open the SaleModal either for a
@@ -2806,7 +2903,7 @@
               window.supabase
                 .from("opportunities")
                 .select(
-                  "ghl_opportunity_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, assigned_to, is_pif, pif_amount, sold_at, updated_at_ghl, created_at_ghl",
+                  "ghl_opportunity_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, gross_sale, mrr, is_pif, sold_at, assigned_to, updated_at_ghl, created_at_ghl",
                 )
                 .eq("ghl_location_id", lead.location_id)
                 .eq("ghl_contact_id", lead.contact_id || "__none__")
@@ -2858,15 +2955,17 @@
               setCurrentStageName(s?.name || null);
               setCurrentAssignedTo(thisOpp.assigned_to || null);
               setCurrentSale({
-                monetary_value:
-                  thisOpp.monetary_value != null
-                    ? Number(thisOpp.monetary_value)
+                gross_sale:
+                  thisOpp.gross_sale != null
+                    ? Number(thisOpp.gross_sale)
                     : null,
+                mrr:
+                  thisOpp.mrr != null
+                    ? Number(thisOpp.mrr)
+                    : thisOpp.monetary_value != null
+                      ? Number(thisOpp.monetary_value)
+                      : null,
                 is_pif: !!thisOpp.is_pif,
-                pif_amount:
-                  thisOpp.pif_amount != null
-                    ? Number(thisOpp.pif_amount)
-                    : null,
                 sold_at: thisOpp.sold_at || null,
               });
             }
@@ -2898,9 +2997,9 @@
           setCurrentStageName(stage.name);
           if (sale) {
             setCurrentSale({
-              monetary_value: sale.monetary_value,
+              gross_sale: sale.gross_sale,
+              mrr: sale.mrr,
               is_pif: !!sale.is_pif,
-              pif_amount: sale.pif_amount,
               sold_at: new Date().toISOString(),
             });
           }
@@ -2916,9 +3015,11 @@
               status: statusHint,
             };
             if (sale) {
-              payload.monetary_value = sale.monetary_value;
+              payload.gross_sale = sale.gross_sale;
+              payload.mrr = sale.mrr;
+              // monetary_value mirrors mrr so GHL's UI stays in sync.
+              payload.monetary_value = sale.mrr;
               payload.is_pif = !!sale.is_pif;
-              payload.pif_amount = sale.is_pif ? sale.pif_amount : null;
             }
             const resp = await callEdgeFunction(
               "ghl-update-opportunity",
@@ -2966,28 +3067,33 @@
           commitStageChange(stage, null);
         };
 
-        // Edit an already-recorded sale (monetary_value / is_pif /
-        // pif_amount only — no stage change). Same Edge Function.
+        // Edit an already-recorded sale (gross_sale / mrr / is_pif only
+        // — no stage change). Same Edge Function.
         const commitSaleEdit = async (sale) => {
           const prevSale = currentSale;
           setSavingStage(true);
           setCurrentSale({
-            monetary_value: sale.monetary_value,
+            gross_sale: sale.gross_sale,
+            mrr: sale.mrr,
             is_pif: !!sale.is_pif,
-            pif_amount: sale.pif_amount,
             sold_at: prevSale?.sold_at || new Date().toISOString(),
           });
           try {
             await callEdgeFunction("ghl-update-opportunity", {
               opportunity_id: lead.opportunity_id,
-              monetary_value: sale.monetary_value,
+              gross_sale: sale.gross_sale,
+              mrr: sale.mrr,
+              monetary_value: sale.mrr,
               is_pif: !!sale.is_pif,
-              pif_amount: sale.is_pif ? sale.pif_amount : null,
             });
             if (onToast) {
               onToast({
                 kind: "success",
-                text: `Sale updated to $${sale.monetary_value}/mo`,
+                text: `Sale updated · $${Number(
+                  sale.gross_sale || 0,
+                ).toLocaleString()} gross / $${Number(
+                  sale.mrr || 0,
+                ).toLocaleString()} MRR`,
               });
             }
             setSaleModal(null);
@@ -3317,7 +3423,9 @@
                 }
                 return false;
               })();
-              const hasValue = currentSale.monetary_value != null;
+              const hasGross = currentSale.gross_sale != null;
+              const hasMrr = currentSale.mrr != null;
+              const hasValue = hasGross || hasMrr;
               const soldAt = currentSale.sold_at
                 ? new Date(currentSale.sold_at).toLocaleDateString("en-US", {
                     month: "short",
@@ -3363,36 +3471,43 @@
                             color: T.textHi,
                             fontFamily: "'Outfit',sans-serif",
                             letterSpacing: "-0.01em",
+                            lineHeight: 1.15,
                           }}
                         >
-                          ${Number(currentSale.monetary_value).toLocaleString()}
+                          {hasGross
+                            ? `$${Number(currentSale.gross_sale).toLocaleString()}`
+                            : "—"}{" "}
                           <span
                             style={{
-                              fontSize: 14,
+                              fontSize: 13,
                               color: T.textMuted,
                               fontWeight: 400,
-                              marginLeft: 4,
                             }}
                           >
-                            /mo
+                            gross
                           </span>
-                          {currentSale.is_pif &&
-                            currentSale.pif_amount != null && (
-                              <span
-                                style={{
-                                  fontSize: 14,
-                                  color: T.text,
-                                  fontWeight: 500,
-                                  marginLeft: 8,
-                                }}
-                              >
-                                + $
-                                {Number(
-                                  currentSale.pif_amount,
-                                ).toLocaleString()}{" "}
-                                PIF
-                              </span>
-                            )}
+                          <span
+                            style={{
+                              fontSize: 15,
+                              color: T.textMuted,
+                              fontWeight: 400,
+                              margin: "0 6px",
+                            }}
+                          >
+                            /
+                          </span>
+                          {hasMrr
+                            ? `$${Number(currentSale.mrr).toLocaleString()}`
+                            : "—"}{" "}
+                          <span
+                            style={{
+                              fontSize: 13,
+                              color: T.textMuted,
+                              fontWeight: 400,
+                            }}
+                          >
+                            MRR
+                          </span>
                         </div>
                       ) : (
                         <div
@@ -3403,6 +3518,20 @@
                           }}
                         >
                           Sale amount not captured
+                        </div>
+                      )}
+                      {hasValue && (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: T.textMuted,
+                            marginTop: 6,
+                          }}
+                        >
+                          PIF:{" "}
+                          <span style={{ color: T.text, fontWeight: 500 }}>
+                            {currentSale.is_pif ? "Yes" : "No"}
+                          </span>
                         </div>
                       )}
                       <div
@@ -3674,9 +3803,9 @@
                     : `Log sale: ${saleModal.stage.name}`
                 }
                 soldByName={profile?.full_name || profile?.email}
-                initialAmount={currentSale.monetary_value}
+                initialGross={currentSale.gross_sale}
+                initialMrr={currentSale.mrr}
                 initialIsPif={currentSale.is_pif}
-                initialPifAmount={currentSale.pif_amount}
                 submitting={savingStage}
                 onCancel={() => {
                   if (!savingStage) setSaleModal(null);
@@ -6344,6 +6473,7 @@
 
       function TerritoryDashboard({ accessibleLocations, onSelectLocation }) {
         const [rows, setRows] = useState([]);
+        const [leaderboard, setLeaderboard] = useState([]);
         const [loading, setLoading] = useState(true);
         const [error, setError] = useState(null);
 
@@ -6352,12 +6482,22 @@
           setError(null);
           try {
             const ids = accessibleLocations.map((l) => l.ghl_location_id);
-            const { data, error: err } = await window.supabase.rpc(
-              "territory_kpis",
-              { p_ghl_location_ids: ids },
-            );
-            if (err) throw err;
-            setRows(data || []);
+            const [kpiRes, lbRes] = await Promise.all([
+              window.supabase.rpc("territory_kpis", {
+                p_ghl_location_ids: ids,
+              }),
+              // Aggregated rep activity across the VP's whole territory.
+              // The RPC returns one row per (rep × location); we fold
+              // here so the leaderboard shows one row per rep with a
+              // combined 📍 tag listing where their activity came from.
+              window.supabase.rpc("rep_leaderboard", {
+                p_ghl_location_ids: ids,
+              }),
+            ]);
+            if (kpiRes.error) throw kpiRes.error;
+            if (lbRes.error) throw lbRes.error;
+            setRows(kpiRes.data || []);
+            setLeaderboard(lbRes.data || []);
           } catch (e) {
             console.error("territory_kpis failed:", e);
             setError(
@@ -6750,6 +6890,205 @@
                   );
                 })}
             </div>
+
+            {/* Territory-wide rep activity leaderboard. Folds the
+                per-(rep × location) rows the RPC returns into one row
+                per rep, with 📍 tags showing where the activity came
+                from. */}
+            {(() => {
+              const locNameById = Object.fromEntries(
+                (accessibleLocations || []).map((l) => [
+                  l.ghl_location_id,
+                  l.name,
+                ]),
+              );
+              const byRep = new Map();
+              (leaderboard || []).forEach((r) => {
+                const key = r.user_id || r.ghl_user_id;
+                if (!key) return;
+                const existing = byRep.get(key) || {
+                  user_id: r.user_id,
+                  ghl_user_id: r.ghl_user_id,
+                  full_name: r.full_name,
+                  role: r.role,
+                  calls: 0,
+                  appts: 0,
+                  sales: 0,
+                  gross: 0,
+                  mrr: 0,
+                  locations: [],
+                };
+                existing.calls += Number(r.calls) || 0;
+                existing.appts += Number(r.appts) || 0;
+                existing.sales += Number(r.sales) || 0;
+                existing.gross += Number(r.gross) || 0;
+                existing.mrr += Number(r.mrr) || 0;
+                const locName =
+                  locNameById[r.ghl_location_id] || r.location_name;
+                if (locName && !existing.locations.includes(locName)) {
+                  existing.locations.push(locName);
+                }
+                byRep.set(key, existing);
+              });
+              const folded = Array.from(byRep.values()).sort(
+                (a, b) =>
+                  b.mrr - a.mrr ||
+                  b.gross - a.gross ||
+                  b.appts - a.appts ||
+                  b.calls - a.calls,
+              );
+              if (loading && folded.length === 0) return null;
+              return (
+                <div
+                  className="surface-card"
+                  style={{ overflow: "hidden", marginTop: 18 }}
+                >
+                  <div
+                    style={{
+                      padding: "20px 24px 14px",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: T.textMuted,
+                    }}
+                  >
+                    Rep Activity — Territory
+                  </div>
+                  {folded.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "22px 24px",
+                        borderTop: `0.5px solid ${T.border}`,
+                        textAlign: "center",
+                        color: T.textMuted,
+                        fontSize: 13,
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      No logged activity yet this period.
+                      <br />
+                      Reps appear here when they log a call, book an
+                      appointment, or close a sale in the portal.
+                    </div>
+                  ) : (
+                    folded.map((r, i) => {
+                      const initial = (r.full_name || "?")[0].toUpperCase();
+                      const statCellStyle = {
+                        textAlign: "center",
+                        minWidth: 44,
+                      };
+                      const numCellStyle = {
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: T.textHi,
+                        fontFamily: "'Outfit',sans-serif",
+                        letterSpacing: "-0.01em",
+                      };
+                      const labelCellStyle = {
+                        fontSize: 9,
+                        color: T.textDim,
+                        letterSpacing: "0.1em",
+                        marginTop: 2,
+                      };
+                      return (
+                        <div
+                          key={r.ghl_user_id || r.user_id || `row-${i}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "14px 24px",
+                            borderTop: `0.5px solid ${T.border}`,
+                            gap: 12,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: "50%",
+                              background: T.airaBlueDim,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 14,
+                              fontWeight: 500,
+                              color: T.airaBlue,
+                              fontFamily: "'Outfit',sans-serif",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {initial}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontSize: 14,
+                                fontWeight: 500,
+                                color: T.textHi,
+                                letterSpacing: "-0.005em",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {r.full_name || "Unknown"}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: T.textMuted,
+                                marginTop: 2,
+                              }}
+                            >
+                              📍 {r.locations.join(" · ")}
+                            </div>
+                          </div>
+                          <div style={statCellStyle}>
+                            <div style={numCellStyle}>{r.calls}</div>
+                            <div style={labelCellStyle}>CALLS</div>
+                          </div>
+                          <div style={statCellStyle}>
+                            <div style={numCellStyle}>{r.appts}</div>
+                            <div style={labelCellStyle}>APPTS</div>
+                          </div>
+                          <div style={statCellStyle}>
+                            <div style={numCellStyle}>{r.sales}</div>
+                            <div style={labelCellStyle}>SALES</div>
+                          </div>
+                          <div style={{ ...statCellStyle, minWidth: 60 }}>
+                            <div
+                              style={{
+                                ...numCellStyle,
+                                color: r.gross > 0 ? T.textHi : T.textDim,
+                              }}
+                            >
+                              {r.gross > 0
+                                ? `$${Math.round(r.gross).toLocaleString()}`
+                                : "—"}
+                            </div>
+                            <div style={labelCellStyle}>GROSS</div>
+                          </div>
+                          <div style={{ ...statCellStyle, minWidth: 56 }}>
+                            <div
+                              style={{
+                                ...numCellStyle,
+                                color: r.mrr > 0 ? T.textHi : T.textDim,
+                              }}
+                            >
+                              {r.mrr > 0
+                                ? `$${Math.round(r.mrr).toLocaleString()}`
+                                : "—"}
+                            </div>
+                            <div style={labelCellStyle}>MRR</div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })()}
           </div>
         );
       }
@@ -11982,14 +12321,8 @@
                   hideLeaderboard={hideLeaderboard}
                   selectedLocationId={selectedLocationId}
                   callLogVersion={callLogVersion}
+                  onSelectRep={setDrilledRep}
                 />
-                <div style={{ padding: "0 16px 24px" }}>
-                  <TeamSection
-                    selectedLocationId={selectedLocationId}
-                    callLogVersion={callLogVersion}
-                    onSelectRep={setDrilledRep}
-                  />
-                </div>
               </>
             );
           }
