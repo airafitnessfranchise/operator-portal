@@ -1,0 +1,264 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const GHL_BASE = "https://services.leadconnectorhq.com";
+const GHL_VERSION = "2021-07-28";
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const JSON_HEADERS = { ...CORS_HEADERS, "Content-Type": "application/json" };
+
+function jsonResp(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
+}
+
+const ALLOWED_ROLES = new Set([
+  "admin",
+  "regional_director",
+  "vp",
+  "manager",
+  "sales_rep",
+  "franchisee",
+]);
+
+const ALLOWED_STATUS = new Set(["open", "won", "lost", "abandoned"]);
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: CORS_HEADERS });
+  }
+  if (req.method !== "POST") {
+    return jsonResp({ ok: false, error: "method not allowed" }, 405);
+  }
+
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+    return jsonResp({ ok: false, error: "missing env vars" }, 500);
+  }
+
+  const jwt = (req.headers.get("Authorization") || "")
+    .replace(/^Bearer\s+/i, "")
+    .trim();
+  if (!jwt) return jsonResp({ ok: false, error: "missing auth" }, 401);
+
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${jwt}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: role, error: roleErr } =
+    await userClient.rpc("current_user_role");
+  if (roleErr) {
+    return jsonResp(
+      { ok: false, error: `role check failed: ${roleErr.message}` },
+      500,
+    );
+  }
+  if (!role || !ALLOWED_ROLES.has(role)) {
+    return jsonResp({ ok: false, error: "not allowed for your role" }, 403);
+  }
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return jsonResp({ ok: false, error: "invalid json body" }, 400);
+  }
+
+  const opportunity_id =
+    typeof body?.opportunity_id === "string" ? body.opportunity_id.trim() : "";
+  const pipeline_stage_id =
+    typeof body?.pipeline_stage_id === "string"
+      ? body.pipeline_stage_id.trim()
+      : "";
+  const requestedStatus =
+    typeof body?.status === "string" ? body.status.trim().toLowerCase() : "";
+
+  if (!opportunity_id) {
+    return jsonResp({ ok: false, error: "opportunity_id is required" }, 400);
+  }
+  if (!pipeline_stage_id && !requestedStatus) {
+    return jsonResp(
+      {
+        ok: false,
+        error: "pipeline_stage_id or status must be provided",
+      },
+      400,
+    );
+  }
+  if (requestedStatus && !ALLOWED_STATUS.has(requestedStatus)) {
+    return jsonResp(
+      {
+        ok: false,
+        error: `status must be one of: ${[...ALLOWED_STATUS].join(", ")}`,
+      },
+      400,
+    );
+  }
+
+  const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  // Look up the opportunity so we can resolve its location + PIT.
+  const { data: opp, error: oppErr } = await adminClient
+    .from("opportunities")
+    .select("ghl_opportunity_id, ghl_location_id, pipeline_id")
+    .eq("ghl_opportunity_id", opportunity_id)
+    .maybeSingle();
+  if (oppErr) {
+    return jsonResp(
+      { ok: false, error: `opportunity lookup failed: ${oppErr.message}` },
+      500,
+    );
+  }
+  if (!opp) {
+    return jsonResp({ ok: false, error: "opportunity not found" }, 404);
+  }
+
+  // Caller must have access to this opportunity's location (this is the
+  // role gate tightening — RLS already covers contacts/opps/stages but
+  // PIT access is service-role, so we enforce here.)
+  const { data: canAccess, error: accErr } = await userClient.rpc(
+    "can_access_ghl_location",
+    { p_ghl_location_id: opp.ghl_location_id },
+  );
+  if (accErr || !canAccess) {
+    return jsonResp({ ok: false, error: "no access to this location" }, 403);
+  }
+
+  // Pull the PIT + (optional) pipeline_id. We need pipelineId on the PUT
+  // body because GHL requires it alongside pipelineStageId.
+  const { data: loc, error: locErr } = await adminClient
+    .from("locations")
+    .select("ghl_location_id, ghl_api_key, pipeline_id")
+    .eq("ghl_location_id", opp.ghl_location_id)
+    .maybeSingle();
+  if (locErr || !loc) {
+    return jsonResp(
+      {
+        ok: false,
+        error: `location lookup failed: ${locErr?.message || "not found"}`,
+      },
+      500,
+    );
+  }
+  if (!loc.ghl_api_key) {
+    return jsonResp(
+      {
+        ok: false,
+        error: "this location has no GHL API key configured",
+      },
+      400,
+    );
+  }
+
+  // If the caller supplied a new stage but we don't know the pipeline_id,
+  // fall back to whatever the stage row knows. pipeline_stages is keyed
+  // on (ghl_location_id, ghl_stage_id).
+  let resolvedPipelineId = opp.pipeline_id || loc.pipeline_id || null;
+  let stageName: string | null = null;
+  if (pipeline_stage_id) {
+    const { data: stageRow } = await adminClient
+      .from("pipeline_stages")
+      .select("name, pipeline_id")
+      .eq("ghl_location_id", opp.ghl_location_id)
+      .eq("ghl_stage_id", pipeline_stage_id)
+      .maybeSingle();
+    if (stageRow) {
+      stageName = stageRow.name || null;
+      if (!resolvedPipelineId && stageRow.pipeline_id) {
+        resolvedPipelineId = stageRow.pipeline_id;
+      }
+    }
+  }
+  if (pipeline_stage_id && !resolvedPipelineId) {
+    return jsonResp(
+      {
+        ok: false,
+        error:
+          "cannot update stage: pipeline_id is unknown for this location — run a sync first",
+      },
+      400,
+    );
+  }
+
+  const ghlBody: Record<string, unknown> = {};
+  if (pipeline_stage_id) {
+    ghlBody.pipelineStageId = pipeline_stage_id;
+    if (resolvedPipelineId) ghlBody.pipelineId = resolvedPipelineId;
+  }
+  if (requestedStatus) {
+    ghlBody.status = requestedStatus;
+  }
+
+  const ghlRes = await fetch(
+    `${GHL_BASE}/opportunities/${encodeURIComponent(opportunity_id)}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${loc.ghl_api_key}`,
+        Version: GHL_VERSION,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(ghlBody),
+    },
+  );
+  if (!ghlRes.ok) {
+    const text = await ghlRes.text();
+    console.error(
+      `[ghl-update-opportunity] GHL PUT failed ${ghlRes.status}: ${text.slice(0, 500)}`,
+    );
+    return jsonResp(
+      {
+        ok: false,
+        error: `GHL update failed (${ghlRes.status}): ${text.slice(0, 300)}`,
+      },
+      502,
+    );
+  }
+  const ghlData = await ghlRes.json().catch(() => ({}));
+
+  // Mirror the change into our cache so the UI reflects it before the
+  // next sync runs. We leave raw alone — the next sync will overwrite.
+  const cachePatch: Record<string, unknown> = {
+    synced_at: new Date().toISOString(),
+    updated_at_ghl: new Date().toISOString(),
+  };
+  if (pipeline_stage_id) {
+    cachePatch.pipeline_stage_id = pipeline_stage_id;
+    if (resolvedPipelineId) cachePatch.pipeline_id = resolvedPipelineId;
+  }
+  if (requestedStatus) cachePatch.status = requestedStatus;
+
+  const { data: updated, error: updateErr } = await adminClient
+    .from("opportunities")
+    .update(cachePatch)
+    .eq("ghl_opportunity_id", opportunity_id)
+    .select(
+      "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, status, name, updated_at_ghl",
+    )
+    .maybeSingle();
+  if (updateErr) {
+    console.error(
+      `[ghl-update-opportunity] cache patch failed: ${updateErr.message}`,
+    );
+  }
+
+  console.log(
+    `[ghl-update-opportunity] ${opportunity_id} → stage=${pipeline_stage_id || "-"} status=${requestedStatus || "-"}`,
+  );
+
+  return jsonResp({
+    ok: true,
+    opportunity: updated || null,
+    stage_name: stageName,
+    ghl: ghlData?.opportunity || ghlData || null,
+  });
+});

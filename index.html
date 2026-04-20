@@ -1764,40 +1764,262 @@
       }
 
       // ── Leads Screen ──
-      function LeadsScreen({ data, onSelect, selectedLocationId }) {
-        const [filter, setFilter] = useState("All");
+      // ── Leads Screen (real data from contacts + opportunities) ──
+      // One row per opportunity. By default we hide closed leads (stages
+      // flagged counts_as_sale OR opportunities.status IN lost/abandoned)
+      // so the VP sees the live pipeline first; the "Show closed" toggle
+      // flips that.
+      //
+      // `aggregate` + `accessibleLocations` switches the view to "All
+      // Leads" across the VP's territory, with a location column per row.
+      function LeadsScreen({
+        selectedLocationId,
+        accessibleLocations,
+        aggregate,
+        onSelect,
+      }) {
+        const [leads, setLeads] = useState([]);
+        const [stages, setStages] = useState([]);
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState(null);
         const [search, setSearch] = useState("");
-        const filters = [
-          "All",
-          "New Lead",
-          "Booked",
-          "Show",
-          "No Show",
-          "Sold",
-          "7DP Given",
-        ];
-        let filtered = data.leads;
-        if (filter !== "All")
-          filtered = filtered.filter((l) => l.status === filter);
-        if (search)
-          filtered = filtered.filter((l) =>
-            `${l.first} ${l.last}`.toLowerCase().includes(search.toLowerCase()),
+        const [showClosed, setShowClosed] = useState(false);
+        const [stageFilter, setStageFilter] = useState("all");
+
+        const locIds = useMemo(() => {
+          if (aggregate) {
+            return (accessibleLocations || []).map((l) => l.ghl_location_id);
+          }
+          return selectedLocationId ? [selectedLocationId] : [];
+        }, [aggregate, accessibleLocations, selectedLocationId]);
+
+        const locNameById = useMemo(() => {
+          const m = {};
+          (accessibleLocations || []).forEach((l) => {
+            m[l.ghl_location_id] = l.name;
+          });
+          return m;
+        }, [accessibleLocations]);
+
+        const load = useCallback(async () => {
+          if (locIds.length === 0) {
+            setLeads([]);
+            setStages([]);
+            setLoading(false);
+            return;
+          }
+          setLoading(true);
+          setError(null);
+          try {
+            const [oppsRes, stagesRes] = await Promise.all([
+              window.supabase
+                .from("opportunities")
+                .select(
+                  "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, assigned_to, source, created_at_ghl, updated_at_ghl",
+                )
+                .in("ghl_location_id", locIds)
+                .order("updated_at_ghl", {
+                  ascending: false,
+                  nullsFirst: false,
+                })
+                .limit(500),
+              window.supabase
+                .from("pipeline_stages")
+                .select(
+                  "ghl_location_id, ghl_stage_id, name, counts_as_show, counts_as_no_show, counts_as_sale",
+                )
+                .in("ghl_location_id", locIds),
+            ]);
+            if (oppsRes.error) throw oppsRes.error;
+            if (stagesRes.error) throw stagesRes.error;
+            const opps = oppsRes.data || [];
+            const stageRows = stagesRes.data || [];
+
+            const contactIds = Array.from(
+              new Set(opps.map((o) => o.ghl_contact_id).filter(Boolean)),
+            );
+            let contactsById = {};
+            if (contactIds.length > 0) {
+              const { data: cRows, error: cErr } = await window.supabase
+                .from("contacts")
+                .select(
+                  "ghl_contact_id, first_name, last_name, full_name, email, phone, source, date_added, assigned_to",
+                )
+                .in("ghl_contact_id", contactIds);
+              if (cErr) throw cErr;
+              contactsById = Object.fromEntries(
+                (cRows || []).map((c) => [c.ghl_contact_id, c]),
+              );
+            }
+
+            // Stage lookup keyed on (location, ghl_stage_id) — stages are
+            // per-location, so the same ghl_stage_id can mean different
+            // things in two different gyms.
+            const stageKey = (locId, stageId) => `${locId}::${stageId}`;
+            const stageByKey = Object.fromEntries(
+              stageRows.map((s) => [
+                stageKey(s.ghl_location_id, s.ghl_stage_id),
+                s,
+              ]),
+            );
+
+            const composed = opps.map((o) => {
+              const c = contactsById[o.ghl_contact_id] || {};
+              const stage =
+                stageByKey[stageKey(o.ghl_location_id, o.pipeline_stage_id)] ||
+                null;
+              const name =
+                c.full_name ||
+                [c.first_name, c.last_name].filter(Boolean).join(" ").trim() ||
+                o.name ||
+                "(unknown contact)";
+              return {
+                opportunity_id: o.ghl_opportunity_id,
+                contact_id: o.ghl_contact_id,
+                location_id: o.ghl_location_id,
+                pipeline_id: o.pipeline_id,
+                stage_id: o.pipeline_stage_id,
+                stage_name: stage?.name || null,
+                stage_is_sale: !!stage?.counts_as_sale,
+                stage_is_show: !!stage?.counts_as_show,
+                stage_is_noshow: !!stage?.counts_as_no_show,
+                opp_name: o.name,
+                opp_status: o.status,
+                monetary_value:
+                  o.monetary_value != null ? Number(o.monetary_value) : null,
+                contact_source: c.source,
+                opp_source: o.source,
+                first_name: c.first_name,
+                last_name: c.last_name,
+                full_name: name,
+                email: c.email,
+                phone: c.phone,
+                contact_date_added: c.date_added,
+                contact_assigned: c.assigned_to,
+                opp_assigned: o.assigned_to,
+                updated_at_ghl: o.updated_at_ghl,
+                created_at_ghl: o.created_at_ghl,
+              };
+            });
+
+            // Sort by contact.date_added DESC (with opp updated_at_ghl
+            // fallback so synthetic rows don't float to the bottom).
+            composed.sort((a, b) => {
+              const ax = new Date(
+                a.contact_date_added ||
+                  a.updated_at_ghl ||
+                  a.created_at_ghl ||
+                  0,
+              ).getTime();
+              const bx = new Date(
+                b.contact_date_added ||
+                  b.updated_at_ghl ||
+                  b.created_at_ghl ||
+                  0,
+              ).getTime();
+              return bx - ax;
+            });
+
+            setLeads(composed);
+            setStages(stageRows);
+          } catch (e) {
+            console.error("leads load failed:", e);
+            setError(e && e.message ? e.message : "Failed to load leads");
+          } finally {
+            setLoading(false);
+          }
+        }, [locIds]);
+
+        useEffect(() => {
+          load();
+        }, [load]);
+
+        const uniqueStageNames = useMemo(() => {
+          const names = new Set();
+          leads.forEach((l) => {
+            if (l.stage_name) names.add(l.stage_name);
+          });
+          return Array.from(names).sort();
+        }, [leads]);
+
+        let visible = leads;
+        if (!showClosed) {
+          visible = visible.filter(
+            (l) =>
+              !l.stage_is_sale &&
+              l.opp_status !== "lost" &&
+              l.opp_status !== "abandoned",
           );
+        }
+        if (stageFilter !== "all") {
+          visible = visible.filter((l) => l.stage_name === stageFilter);
+        }
+        if (search.trim()) {
+          const q = search.trim().toLowerCase();
+          visible = visible.filter(
+            (l) =>
+              (l.full_name || "").toLowerCase().includes(q) ||
+              (l.email || "").toLowerCase().includes(q) ||
+              (l.phone || "").toLowerCase().includes(q),
+          );
+        }
+
+        const closedCount =
+          leads.length -
+          leads.filter(
+            (l) =>
+              !l.stage_is_sale &&
+              l.opp_status !== "lost" &&
+              l.opp_status !== "abandoned",
+          ).length;
+
+        const title = aggregate ? "All Leads" : "Leads";
 
         return (
           <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
             <div
               style={{
-                fontSize: 22,
-                fontWeight: 500,
-                color: T.textHi,
-                fontFamily: "'Outfit',sans-serif",
-                letterSpacing: "-0.01em",
-                marginBottom: 18,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 4,
+                gap: 12,
               }}
             >
-              Leads
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 500,
+                  color: T.textHi,
+                  fontFamily: "'Outfit',sans-serif",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {title}
+              </div>
+              <button
+                className="btn-ghost"
+                onClick={load}
+                style={{ fontSize: 12 }}
+              >
+                ↻ Refresh
+              </button>
             </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: T.textMuted,
+                marginBottom: 14,
+              }}
+            >
+              {aggregate
+                ? `${(accessibleLocations || []).length} locations · ${visible.length} visible`
+                : `${visible.length} open`}
+              {closedCount > 0 &&
+                !showClosed &&
+                ` · ${closedCount} closed hidden`}
+            </div>
+
             <div style={{ position: "relative", marginBottom: 12 }}>
               <span
                 style={{
@@ -1814,7 +2036,7 @@
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search leads..."
+                placeholder="Search name, email, or phone…"
                 style={{
                   width: "100%",
                   padding: "12px 16px 12px 42px",
@@ -1828,6 +2050,7 @@
                 }}
               />
             </div>
+
             <div
               style={{
                 display: "flex",
@@ -1837,12 +2060,13 @@
                 marginBottom: 8,
               }}
             >
-              {filters.map((f) => {
-                const active = filter === f;
+              {["all", ...uniqueStageNames].map((f) => {
+                const active = stageFilter === f;
+                const label = f === "all" ? "All" : f;
                 return (
                   <button
                     key={f}
-                    onClick={() => setFilter(f)}
+                    onClick={() => setStageFilter(f)}
                     style={{
                       padding: "6px 14px",
                       borderRadius: 999,
@@ -1857,160 +2081,398 @@
                       transition: "background 160ms ease",
                     }}
                   >
-                    {f}
+                    {label}
                   </button>
                 );
               })}
             </div>
-            {filtered.map((lead) => (
+
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 12,
+                color: T.textMuted,
+                marginBottom: 14,
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showClosed}
+                onChange={(e) => setShowClosed(e.target.checked)}
+                style={{ accentColor: T.airaBlue }}
+              />
+              Show closed (sales, lost, abandoned)
+            </label>
+
+            {error && (
               <div
-                key={lead.id}
-                onClick={() => onSelect(lead)}
-                className="surface-card interactive"
+                className="surface-card"
                 style={{
-                  padding: "16px 18px",
-                  marginBottom: 10,
+                  padding: "14px 16px",
+                  marginBottom: 12,
+                  borderLeft: `3px solid ${T.red}`,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
                 }}
               >
-                <div
+                <span
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: 8,
-                    gap: 10,
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: T.red,
+                    flexShrink: 0,
                   }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 500,
-                        color: T.textHi,
-                        letterSpacing: "-0.005em",
-                      }}
-                    >
-                      {lead.first} {lead.last}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: T.textMuted,
-                        marginTop: 2,
-                      }}
-                    >
-                      {lead.source} · {lead.date}
-                    </div>
-                  </div>
-                  <StatusPill status={lead.status} />
-                </div>
-                {lead.assigned && (
-                  <div style={{ fontSize: 12, color: T.textMuted }}>
-                    Assigned:{" "}
-                    <span style={{ color: T.text, fontWeight: 500 }}>
-                      {lead.assigned}
-                    </span>
-                  </div>
-                )}
-                {lead.aptDate && (
-                  <div style={{ fontSize: 12, color: T.textMuted }}>
-                    Appt:{" "}
-                    <span style={{ color: T.text, fontWeight: 500 }}>
-                      {lead.aptDate}
-                    </span>
-                  </div>
-                )}
-                {lead.notes && (
+                />
+                <span style={{ color: T.text, fontSize: 13, fontWeight: 500 }}>
+                  {error}
+                </span>
+              </div>
+            )}
+
+            {loading && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                {[0, 1, 2].map((i) => (
                   <div
+                    key={`skel-${i}`}
+                    className="surface-card"
                     style={{
-                      fontSize: 12,
-                      color: T.textMuted,
-                      marginTop: 6,
+                      padding: "16px 18px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
                     }}
                   >
-                    {lead.notes}
+                    <SkelBar w={160} h={14} />
+                    <SkelBar w={220} h={10} />
+                    <SkelBar w={120} h={10} />
                   </div>
-                )}
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  <ActionBtn
-                    icon="📞"
-                    label="Call"
-                    href={`tel:${lead.phone}`}
-                    primary
-                    small
-                    onClick={() =>
-                      markPendingCall({
-                        contactId: lead.id,
-                        contactName: `${lead.first} ${lead.last}`.trim(),
-                        ghl_location_id: selectedLocationId,
-                      })
-                    }
-                  />
-                  <ActionBtn
-                    icon="💬"
-                    label="Text"
-                    href={`sms:${lead.phone}`}
-                    small
-                  />
-                </div>
+                ))}
               </div>
-            ))}
-            {filtered.length === 0 && (
+            )}
+
+            {!loading &&
+              visible.map((lead) => {
+                const dateStr = lead.contact_date_added
+                  ? new Date(lead.contact_date_added).toLocaleDateString(
+                      "en-US",
+                      { month: "short", day: "numeric" },
+                    )
+                  : lead.updated_at_ghl
+                    ? new Date(lead.updated_at_ghl).toLocaleDateString(
+                        "en-US",
+                        { month: "short", day: "numeric" },
+                      )
+                    : "";
+                const sourceLabel = lead.contact_source || lead.opp_source;
+                const stageDot = lead.stage_is_sale
+                  ? T.green
+                  : lead.stage_is_noshow
+                    ? T.red
+                    : lead.stage_is_show
+                      ? T.green
+                      : T.airaBlue;
+                const stageLabel = (
+                  lead.stage_name ||
+                  lead.opp_status ||
+                  "Stage"
+                )
+                  .toString()
+                  .toUpperCase();
+                return (
+                  <div
+                    key={lead.opportunity_id}
+                    onClick={() => onSelect(lead)}
+                    className="surface-card interactive"
+                    style={{
+                      padding: "16px 18px",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        marginBottom: 8,
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 15,
+                            fontWeight: 500,
+                            color: T.textHi,
+                            letterSpacing: "-0.005em",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {lead.full_name}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: T.textMuted,
+                            marginTop: 2,
+                          }}
+                        >
+                          {sourceLabel ? `${sourceLabel} · ` : ""}
+                          {dateStr || "—"}
+                        </div>
+                      </div>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: 10,
+                          fontWeight: 500,
+                          letterSpacing: "0.12em",
+                          textTransform: "uppercase",
+                          color: T.textMuted,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: stageDot,
+                            flexShrink: 0,
+                          }}
+                        />
+                        {stageLabel}
+                      </span>
+                    </div>
+
+                    {aggregate && locNameById[lead.location_id] && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: T.textMuted,
+                          marginBottom: 4,
+                        }}
+                      >
+                        📍{" "}
+                        <span style={{ color: T.text, fontWeight: 500 }}>
+                          {locNameById[lead.location_id]}
+                        </span>
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                      {lead.phone && (
+                        <ActionBtn
+                          icon="📞"
+                          label="Call"
+                          href={`tel:${lead.phone}`}
+                          primary
+                          small
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            markPendingCall({
+                              contactId: lead.contact_id,
+                              contactName: lead.full_name,
+                              ghl_location_id: lead.location_id,
+                            });
+                          }}
+                        />
+                      )}
+                      {lead.phone && (
+                        <ActionBtn
+                          icon="💬"
+                          label="Text"
+                          href={`sms:${lead.phone}`}
+                          small
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+            {!loading && visible.length === 0 && !error && (
               <div
+                className="surface-card"
                 style={{
+                  padding: 40,
                   textAlign: "center",
                   color: T.textMuted,
-                  padding: 40,
-                  fontSize: 14,
+                  fontSize: 13,
                 }}
               >
-                No leads match this filter
+                {leads.length === 0
+                  ? "No leads synced yet for this location."
+                  : "No leads match this filter."}
               </div>
             )}
           </div>
         );
       }
 
-      // ── Lead Detail ──
-      function LeadDetail({ lead, onBack, selectedLocationId, onBook }) {
+      // ── Lead Detail (real data) ──
+      // `lead` here is the composed shape that LeadsScreen produced.
+      // We load extra context (all opportunities for this contact, recent
+      // call logs) and expose a stage picker that writes to GHL via the
+      // ghl-update-opportunity Edge Function.
+      function LeadDetail({ lead, onBack, onBook, onToast, onChanged }) {
+        const [opportunities, setOpportunities] = useState([]);
+        const [stages, setStages] = useState([]);
+        const [callLogs, setCallLogs] = useState([]);
+        const [loading, setLoading] = useState(true);
+        const [savingStage, setSavingStage] = useState(false);
+        const [currentStageId, setCurrentStageId] = useState(lead.stage_id);
+        const [currentStageName, setCurrentStageName] = useState(
+          lead.stage_name,
+        );
+
         const markCall = () =>
           markPendingCall({
-            contactId: lead.id,
-            contactName: `${lead.first} ${lead.last}`.trim(),
-            ghl_location_id: selectedLocationId,
+            contactId: lead.contact_id,
+            contactName: lead.full_name,
+            ghl_location_id: lead.location_id,
           });
-        const [newStatus, setNewStatus] = useState(lead.status);
-        const statuses = [
-          "New Lead",
-          "Booked",
-          "Confirmed",
-          "Show",
-          "No Show",
-          "Sold",
-          "7DP Given",
-          "7DP Not Converted",
-          "Cancelled",
-        ];
+
+        const load = useCallback(async () => {
+          setLoading(true);
+          try {
+            const [oppsRes, stagesRes, callsRes] = await Promise.all([
+              window.supabase
+                .from("opportunities")
+                .select(
+                  "ghl_opportunity_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, updated_at_ghl, created_at_ghl",
+                )
+                .eq("ghl_location_id", lead.location_id)
+                .eq("ghl_contact_id", lead.contact_id || "__none__")
+                .order("updated_at_ghl", {
+                  ascending: false,
+                  nullsFirst: false,
+                }),
+              window.supabase
+                .from("pipeline_stages")
+                .select(
+                  "ghl_stage_id, name, position, counts_as_show, counts_as_no_show, counts_as_sale, pipeline_id",
+                )
+                .eq("ghl_location_id", lead.location_id)
+                .order("position", {
+                  ascending: true,
+                  nullsFirst: false,
+                }),
+              window.supabase
+                .from("call_logs")
+                .select(
+                  "id, outcome, notes, called_at, user_id, users:user_id(full_name)",
+                )
+                .eq("ghl_location_id", lead.location_id)
+                .eq("ghl_contact_id", lead.contact_id || "__none__")
+                .order("called_at", { ascending: false })
+                .limit(20),
+            ]);
+            if (oppsRes.error) throw oppsRes.error;
+            if (stagesRes.error) throw stagesRes.error;
+            if (callsRes.error) throw callsRes.error;
+            setOpportunities(oppsRes.data || []);
+            setStages(stagesRes.data || []);
+            setCallLogs(callsRes.data || []);
+            const thisOpp = (oppsRes.data || []).find(
+              (o) => o.ghl_opportunity_id === lead.opportunity_id,
+            );
+            if (thisOpp) {
+              setCurrentStageId(thisOpp.pipeline_stage_id);
+              const s = (stagesRes.data || []).find(
+                (x) => x.ghl_stage_id === thisOpp.pipeline_stage_id,
+              );
+              setCurrentStageName(s?.name || null);
+            }
+          } catch (e) {
+            console.error("lead detail load failed:", e);
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: e && e.message ? e.message : "Failed to load lead",
+              });
+            }
+          } finally {
+            setLoading(false);
+          }
+        }, [lead.location_id, lead.contact_id, lead.opportunity_id, onToast]);
+
+        useEffect(() => {
+          load();
+        }, [load]);
+
+        const changeStage = async (stage) => {
+          if (savingStage || stage.ghl_stage_id === currentStageId) return;
+          const prevId = currentStageId;
+          const prevName = currentStageName;
+          // Optimistic update, revert on failure
+          setSavingStage(true);
+          setCurrentStageId(stage.ghl_stage_id);
+          setCurrentStageName(stage.name);
+          try {
+            const statusHint = stage.counts_as_sale
+              ? "won"
+              : stage.counts_as_no_show
+                ? "lost"
+                : "open";
+            await callEdgeFunction("ghl-update-opportunity", {
+              opportunity_id: lead.opportunity_id,
+              pipeline_stage_id: stage.ghl_stage_id,
+              status: statusHint,
+            });
+            if (onToast) {
+              onToast({
+                kind: "success",
+                text: `Updated to ${stage.name}`,
+              });
+            }
+            if (onChanged) onChanged();
+          } catch (e) {
+            setCurrentStageId(prevId);
+            setCurrentStageName(prevName);
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: e && e.message ? e.message : "Update failed",
+              });
+            }
+          } finally {
+            setSavingStage(false);
+          }
+        };
+
+        const dateAddedStr = lead.contact_date_added
+          ? new Date(lead.contact_date_added).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })
+          : "";
+        const sourceLabel = lead.contact_source || lead.opp_source;
 
         return (
           <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
             <button
               className="btn-ghost"
               onClick={onBack}
-              style={{
-                fontSize: 13,
-                marginBottom: 14,
-                paddingLeft: 0,
-              }}
+              style={{ fontSize: 13, marginBottom: 14, paddingLeft: 0 }}
             >
               ← Back to Leads
             </button>
             <div
               className="surface-card"
-              style={{
-                padding: 24,
-                marginBottom: 16,
-              }}
+              style={{ padding: 24, marginBottom: 16 }}
             >
               <div
                 style={{
@@ -2030,7 +2492,7 @@
                       letterSpacing: "-0.01em",
                     }}
                   >
-                    {lead.first} {lead.last}
+                    {lead.full_name}
                   </div>
                   <div
                     style={{
@@ -2039,10 +2501,36 @@
                       marginTop: 4,
                     }}
                   >
-                    {lead.source} · {lead.date}
+                    {sourceLabel ? `${sourceLabel} · ` : ""}
+                    {dateAddedStr || "—"}
                   </div>
                 </div>
-                <StatusPill status={newStatus} />
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 10,
+                    fontWeight: 500,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: T.textMuted,
+                    flexShrink: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: T.airaBlue,
+                      flexShrink: 0,
+                    }}
+                  />
+                  {(currentStageName || lead.opp_status || "Stage")
+                    .toString()
+                    .toUpperCase()}
+                </span>
               </div>
               <div
                 style={{
@@ -2052,23 +2540,25 @@
                   gap: 10,
                 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    fontSize: 14,
-                  }}
-                >
-                  <span>📱</span>
-                  <a
-                    href={`tel:${lead.phone}`}
-                    onClick={markCall}
-                    style={{ color: T.airaBlueDark, fontWeight: 500 }}
+                {lead.phone && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      fontSize: 14,
+                    }}
                   >
-                    {lead.phone}
-                  </a>
-                </div>
+                    <span>📱</span>
+                    <a
+                      href={`tel:${lead.phone}`}
+                      onClick={markCall}
+                      style={{ color: T.airaBlueDark, fontWeight: 500 }}
+                    >
+                      {lead.phone}
+                    </a>
+                  </div>
+                )}
                 {lead.email && (
                   <div
                     style={{
@@ -2082,7 +2572,7 @@
                     <span style={{ color: T.text }}>{lead.email}</span>
                   </div>
                 )}
-                {lead.assigned && (
+                {(lead.contact_assigned || lead.opp_assigned) && (
                   <div
                     style={{
                       display: "flex",
@@ -2093,27 +2583,9 @@
                   >
                     <span>👤</span>
                     <span style={{ color: T.text }}>
-                      Assigned to{" "}
+                      Assigned (GHL id):{" "}
                       <strong style={{ fontWeight: 500, color: T.textHi }}>
-                        {lead.assigned}
-                      </strong>
-                    </span>
-                  </div>
-                )}
-                {lead.aptDate && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      fontSize: 14,
-                    }}
-                  >
-                    <span>📅</span>
-                    <span style={{ color: T.text }}>
-                      Appointment:{" "}
-                      <strong style={{ fontWeight: 500, color: T.textHi }}>
-                        {lead.aptDate}
+                        {lead.opp_assigned || lead.contact_assigned}
                       </strong>
                     </span>
                   </div>
@@ -2127,25 +2599,31 @@
                   flexWrap: "wrap",
                 }}
               >
-                <ActionBtn
-                  icon="📞"
-                  label="Call Now"
-                  href={`tel:${lead.phone}`}
-                  primary
-                  onClick={markCall}
-                />
-                <ActionBtn icon="💬" label="Text" href={`sms:${lead.phone}`} />
+                {lead.phone && (
+                  <ActionBtn
+                    icon="📞"
+                    label="Call Now"
+                    href={`tel:${lead.phone}`}
+                    primary
+                    onClick={markCall}
+                  />
+                )}
+                {lead.phone && (
+                  <ActionBtn
+                    icon="💬"
+                    label="Text"
+                    href={`sms:${lead.phone}`}
+                  />
+                )}
                 {onBook && (
                   <ActionBtn icon="📅" label="Book Appt" onClick={onBook} />
                 )}
               </div>
             </div>
+
             <div
               className="surface-card"
-              style={{
-                padding: 20,
-                marginBottom: 16,
-              }}
+              style={{ padding: 20, marginBottom: 16 }}
             >
               <div
                 style={{
@@ -2157,48 +2635,50 @@
                   marginBottom: 14,
                 }}
               >
-                Update Status
+                Change Stage
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {statuses.map((s) => {
-                  const active = newStatus === s;
-                  return (
-                    <button
-                      key={s}
-                      onClick={() => setNewStatus(s)}
-                      style={{
-                        padding: "8px 12px",
-                        borderRadius: 8,
-                        border: `0.5px solid ${active ? T.airaBlue : T.border}`,
-                        background: active ? T.airaBlueDim : T.surface,
-                        color: active ? T.airaBlueDark : T.text,
-                        fontSize: 12,
-                        fontWeight: 500,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        transition: "all 160ms ease",
-                      }}
-                    >
-                      {s}
-                    </button>
-                  );
-                })}
-              </div>
-              {newStatus !== lead.status && (
-                <button
-                  className="btn-primary"
-                  style={{
-                    width: "100%",
-                    marginTop: 16,
-                    padding: "12px",
-                  }}
-                >
-                  Save Status → {newStatus}
-                </button>
+              {loading && <SkelBar w="100%" h={36} />}
+              {!loading && stages.length === 0 && (
+                <div style={{ fontSize: 13, color: T.textMuted }}>
+                  No pipeline stages cached for this location yet. Run a sync.
+                </div>
+              )}
+              {!loading && stages.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {stages.map((s) => {
+                    const active = s.ghl_stage_id === currentStageId;
+                    return (
+                      <button
+                        key={s.ghl_stage_id}
+                        onClick={() => changeStage(s)}
+                        disabled={savingStage}
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: 8,
+                          border: `0.5px solid ${active ? T.airaBlue : T.border}`,
+                          background: active ? T.airaBlueDim : T.surface,
+                          color: active ? T.airaBlueDark : T.text,
+                          fontSize: 12,
+                          fontWeight: 500,
+                          cursor: savingStage ? "wait" : "pointer",
+                          opacity: savingStage && !active ? 0.55 : 1,
+                          fontFamily: "inherit",
+                          transition: "all 160ms ease",
+                        }}
+                      >
+                        {s.name}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
-            {lead.notes && (
-              <div className="surface-card" style={{ padding: 20 }}>
+
+            {opportunities.length > 1 && (
+              <div
+                className="surface-card"
+                style={{ padding: 20, marginBottom: 16 }}
+              >
                 <div
                   style={{
                     fontSize: 11,
@@ -2209,24 +2689,369 @@
                     marginBottom: 10,
                   }}
                 >
-                  Notes
+                  All Opportunities ({opportunities.length})
                 </div>
-                <div style={{ fontSize: 14, color: T.text, lineHeight: 1.6 }}>
-                  {lead.notes}
-                </div>
+                {opportunities.map((o) => {
+                  const s = stages.find(
+                    (x) => x.ghl_stage_id === o.pipeline_stage_id,
+                  );
+                  return (
+                    <div
+                      key={o.ghl_opportunity_id}
+                      style={{
+                        padding: "8px 0",
+                        borderTop:
+                          o === opportunities[0]
+                            ? "none"
+                            : `0.5px solid ${T.border}`,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "baseline",
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 500,
+                            color: T.textHi,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {o.name || "(no name)"}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: T.textMuted,
+                            marginTop: 2,
+                          }}
+                        >
+                          {s?.name || "—"} · {o.status || "open"}
+                        </div>
+                      </div>
+                      {o.monetary_value != null && (
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: T.textHi,
+                            fontFamily: "'Outfit',sans-serif",
+                            letterSpacing: "-0.01em",
+                          }}
+                        >
+                          ${Number(o.monetary_value).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
+
+            <div className="surface-card" style={{ padding: 20 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: T.textMuted,
+                  marginBottom: 10,
+                }}
+              >
+                Call Log
+              </div>
+              {callLogs.length === 0 && (
+                <div style={{ fontSize: 12, color: T.textMuted }}>
+                  No calls logged for this contact yet.
+                </div>
+              )}
+              {callLogs.map((c) => (
+                <div
+                  key={c.id}
+                  style={{
+                    padding: "10px 0",
+                    borderTop:
+                      c === callLogs[0] ? "none" : `0.5px solid ${T.border}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "baseline",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: T.textHi,
+                      }}
+                    >
+                      {(c.outcome || "").replace(/_/g, " ")}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textDim }}>
+                      {new Date(c.called_at).toLocaleString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </div>
+                  </div>
+                  {c.users?.full_name && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: T.textMuted,
+                        marginTop: 2,
+                      }}
+                    >
+                      {c.users.full_name}
+                    </div>
+                  )}
+                  {c.notes && (
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: T.text,
+                        marginTop: 4,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {c.notes}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         );
       }
 
-      // ── Conversations Screen ──
-      function ConversationsScreen({ data, selectedLocationId }) {
+      // ── Conversations Screen (real data) ──
+      // Reads from public.conversations (populated by sync-ghl-to-cache).
+      // Send-message path calls ghl-send-message (deferred) for now; the
+      // input optimistically appends to full_thread so the conversation
+      // shows the new outbound message immediately.
+      function ConversationsScreen({
+        selectedLocationId,
+        accessibleLocations,
+        aggregate,
+        profile,
+        onToast,
+      }) {
+        const [rows, setRows] = useState([]);
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState(null);
         const [selected, setSelected] = useState(null);
         const [reply, setReply] = useState("");
+        const [sending, setSending] = useState(false);
+
+        const locIds = useMemo(() => {
+          if (aggregate) {
+            return (accessibleLocations || []).map((l) => l.ghl_location_id);
+          }
+          return selectedLocationId ? [selectedLocationId] : [];
+        }, [aggregate, accessibleLocations, selectedLocationId]);
+
+        const locNameById = useMemo(() => {
+          const m = {};
+          (accessibleLocations || []).forEach((l) => {
+            m[l.ghl_location_id] = l.name;
+          });
+          return m;
+        }, [accessibleLocations]);
+
+        const load = useCallback(async () => {
+          if (locIds.length === 0) {
+            setRows([]);
+            setLoading(false);
+            return;
+          }
+          setLoading(true);
+          setError(null);
+          try {
+            const { data, error: err } = await window.supabase
+              .from("conversations")
+              .select(
+                "id, ghl_conversation_id, ghl_location_id, ghl_contact_id, contact_name, last_message_body, last_message_type, last_message_at, unread_count, full_thread, synced_at",
+              )
+              .in("ghl_location_id", locIds)
+              .order("last_message_at", {
+                ascending: false,
+                nullsFirst: false,
+              })
+              .limit(200);
+            if (err) throw err;
+            setRows(data || []);
+            if (selected) {
+              const fresh = (data || []).find(
+                (r) => r.ghl_conversation_id === selected.ghl_conversation_id,
+              );
+              if (fresh) setSelected(fresh);
+            }
+          } catch (e) {
+            console.error("conversations load failed:", e);
+            setError(e && e.message ? e.message : "Failed to load");
+          } finally {
+            setLoading(false);
+          }
+          // eslint-disable-next-line
+        }, [locIds.join("|")]);
+
+        useEffect(() => {
+          load();
+        }, [load]);
+
+        const relTime = (iso) => {
+          if (!iso) return "";
+          const d = new Date(iso);
+          const now = new Date();
+          const sameDay =
+            d.getFullYear() === now.getFullYear() &&
+            d.getMonth() === now.getMonth() &&
+            d.getDate() === now.getDate();
+          if (sameDay)
+            return d.toLocaleTimeString("en-US", {
+              hour: "numeric",
+              minute: "2-digit",
+            });
+          return d.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          });
+        };
+
+        const formatMsgTime = (iso) => {
+          if (!iso) return "";
+          return new Date(iso).toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          });
+        };
+
+        const submitSend = async () => {
+          const msg = reply.trim();
+          if (!msg || !selected || sending) return;
+          if (!selected.ghl_contact_id) {
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: "Missing contact id — can't send from this conversation",
+              });
+            }
+            return;
+          }
+          setSending(true);
+          const optimistic = {
+            id: `local-${Date.now()}`,
+            direction: "outbound",
+            body: msg,
+            dateAdded: new Date().toISOString(),
+            type: "SMS",
+            messageType: "TYPE_SMS",
+            _optimistic: true,
+          };
+          const priorThread = Array.isArray(selected.full_thread)
+            ? selected.full_thread
+            : [];
+          setSelected({
+            ...selected,
+            full_thread: [...priorThread, optimistic],
+            last_message_body: msg,
+            last_message_at: optimistic.dateAdded,
+          });
+          setReply("");
+          try {
+            await callEdgeFunction("ghl-send-message", {
+              ghl_location_id: selected.ghl_location_id,
+              ghl_contact_id: selected.ghl_contact_id,
+              type: "SMS",
+              message: msg,
+            });
+            await load();
+          } catch (e) {
+            // Roll back the optimistic append
+            setSelected({
+              ...selected,
+              full_thread: priorThread,
+            });
+            setReply(msg);
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: e && e.message ? e.message : "Send failed",
+              });
+            }
+          } finally {
+            setSending(false);
+          }
+        };
+
+        // Lazy-load the thread if the cache hasn't populated it yet.
+        // Bulk sync only hydrates the most recent N conversations per
+        // location; anything older gets its thread on the first tap.
+        const [hydratingThread, setHydratingThread] = useState(false);
+        useEffect(() => {
+          if (
+            !selected ||
+            !selected.ghl_conversation_id ||
+            (Array.isArray(selected.full_thread) &&
+              selected.full_thread.length > 0)
+          ) {
+            return;
+          }
+          let cancelled = false;
+          (async () => {
+            setHydratingThread(true);
+            try {
+              const resp = await callEdgeFunction(
+                "ghl-get-conversation-thread",
+                { ghl_conversation_id: selected.ghl_conversation_id },
+              );
+              if (cancelled) return;
+              setSelected((prev) =>
+                prev &&
+                prev.ghl_conversation_id === selected.ghl_conversation_id
+                  ? { ...prev, full_thread: resp.thread || [] }
+                  : prev,
+              );
+            } catch (e) {
+              if (!cancelled && onToast) {
+                onToast({
+                  kind: "error",
+                  text:
+                    e && e.message
+                      ? `Couldn't load thread: ${e.message}`
+                      : "Couldn't load thread",
+                });
+              }
+            } finally {
+              if (!cancelled) setHydratingThread(false);
+            }
+          })();
+          return () => {
+            cancelled = true;
+          };
+        }, [selected?.ghl_conversation_id]);
 
         if (selected) {
-          const incoming = selected.direction === "in";
+          const thread = Array.isArray(selected.full_thread)
+            ? selected.full_thread
+            : [];
+          const reversedThread = [...thread].sort((a, b) => {
+            const ax = new Date(a.dateAdded || a.createdAt || 0).getTime();
+            const bx = new Date(b.dateAdded || b.createdAt || 0).getTime();
+            return ax - bx;
+          });
           return (
             <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
               <button
@@ -2241,7 +3066,7 @@
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  marginBottom: 20,
+                  marginBottom: 14,
                   gap: 12,
                 }}
               >
@@ -2255,82 +3080,111 @@
                       letterSpacing: "-0.01em",
                     }}
                   >
-                    {selected.name}
+                    {selected.contact_name || "(unknown)"}
                   </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: T.textMuted,
-                      marginTop: 2,
-                    }}
-                  >
-                    {selected.phone}
-                  </div>
+                  {aggregate && locNameById[selected.ghl_location_id] && (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: T.textMuted,
+                        marginTop: 2,
+                      }}
+                    >
+                      📍 {locNameById[selected.ghl_location_id]}
+                    </div>
+                  )}
                 </div>
-                <ActionBtn
-                  icon="📞"
-                  label="Call"
-                  href={`tel:${selected.phone}`}
-                  primary
-                  small
-                  onClick={() =>
-                    markPendingCall({
-                      contactId: selected.id,
-                      contactName: selected.name,
-                      ghl_location_id: selectedLocationId,
-                    })
-                  }
-                />
               </div>
               <div
                 className="surface-card"
                 style={{
-                  padding: 20,
-                  minHeight: 300,
+                  padding: 16,
+                  minHeight: 320,
+                  maxHeight: "55vh",
+                  overflowY: "auto",
                   display: "flex",
                   flexDirection: "column",
-                  justifyContent: "flex-end",
+                  gap: 10,
                 }}
               >
-                <div
-                  style={{
-                    marginBottom: 16,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                  }}
-                >
+                {reversedThread.length === 0 && (
                   <div
                     style={{
-                      alignSelf: incoming ? "flex-start" : "flex-end",
-                      maxWidth: "80%",
-                      padding: "10px 14px",
-                      borderRadius: 14,
-                      background: incoming ? T.surfaceAlt : T.airaBlue,
-                      color: incoming ? T.text : "#ffffff",
-                      border: incoming ? `0.5px solid ${T.border}` : "none",
-                      fontSize: 14,
-                      lineHeight: 1.4,
+                      fontSize: 13,
+                      color: T.textMuted,
+                      textAlign: "center",
+                      padding: 20,
                     }}
                   >
-                    {selected.lastMsg}
+                    {hydratingThread
+                      ? "Loading thread…"
+                      : "No messages in thread yet."}
                   </div>
-                  <div
-                    style={{
-                      alignSelf: incoming ? "flex-start" : "flex-end",
-                      fontSize: 10,
-                      color: T.textDim,
-                    }}
-                  >
-                    {selected.time}
-                  </div>
-                </div>
+                )}
+                {reversedThread.map((m, i) => {
+                  const dirRaw = (m.direction || m.messageType || "")
+                    .toString()
+                    .toLowerCase();
+                  const incoming =
+                    dirRaw.includes("inbound") ||
+                    dirRaw.includes("in") ||
+                    dirRaw === "received";
+                  const body = m.body || m.message || m.text || "";
+                  const t = m.dateAdded || m.createdAt || m.date || null;
+                  return (
+                    <div
+                      key={m.id || `m-${i}`}
+                      style={{
+                        alignSelf: incoming ? "flex-start" : "flex-end",
+                        maxWidth: "82%",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 3,
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: "10px 14px",
+                          borderRadius: 14,
+                          background: incoming ? T.surfaceAlt : T.airaBlue,
+                          color: incoming ? T.text : "#ffffff",
+                          border: incoming ? `0.5px solid ${T.border}` : "none",
+                          fontSize: 14,
+                          lineHeight: 1.45,
+                          opacity: m._optimistic ? 0.75 : 1,
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {body}
+                      </div>
+                      {t && (
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: T.textDim,
+                            alignSelf: incoming ? "flex-start" : "flex-end",
+                          }}
+                        >
+                          {formatMsgTime(t)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <input
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
-                  placeholder="Type a message..."
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      submitSend();
+                    }
+                  }}
+                  placeholder="Type a message…"
+                  disabled={sending}
                   style={{
                     flex: 1,
                     padding: "12px 16px",
@@ -2344,9 +3198,11 @@
                 />
                 <button
                   className="btn-primary"
+                  onClick={submitSend}
+                  disabled={sending || !reply.trim()}
                   style={{ padding: "12px 20px" }}
                 >
-                  Send
+                  {sending ? "Sending…" : "Send"}
                 </button>
               </div>
             </div>
@@ -2357,108 +3213,220 @@
           <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
             <div
               style={{
-                fontSize: 22,
-                fontWeight: 500,
-                color: T.textHi,
-                fontFamily: "'Outfit',sans-serif",
-                letterSpacing: "-0.01em",
-                marginBottom: 18,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 6,
               }}
             >
-              Conversations
-            </div>
-            {data.conversations.map((c) => (
               <div
-                key={c.id}
-                onClick={() => setSelected(c)}
-                className="surface-card interactive"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 14,
-                  padding: "14px 16px",
-                  marginBottom: 8,
+                  fontSize: 22,
+                  fontWeight: 500,
+                  color: T.textHi,
+                  fontFamily: "'Outfit',sans-serif",
+                  letterSpacing: "-0.01em",
                 }}
               >
-                <div
+                {aggregate ? "All Conversations" : "Conversations"}
+              </div>
+              <button
+                className="btn-ghost"
+                onClick={load}
+                style={{ fontSize: 12 }}
+              >
+                ↻ Refresh
+              </button>
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: T.textMuted,
+                marginBottom: 14,
+              }}
+            >
+              {aggregate
+                ? `${(accessibleLocations || []).length} locations · last 30 days`
+                : "Last 30 days"}
+            </div>
+
+            {error && (
+              <div
+                className="surface-card"
+                style={{
+                  padding: "14px 16px",
+                  marginBottom: 12,
+                  borderLeft: `3px solid ${T.red}`,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <span
                   style={{
-                    width: 42,
-                    height: 42,
+                    width: 6,
+                    height: 6,
                     borderRadius: "50%",
-                    background: T.airaBlueDim,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 15,
-                    fontWeight: 500,
-                    color: T.airaBlue,
-                    fontFamily: "'Outfit',sans-serif",
+                    background: T.red,
                     flexShrink: 0,
                   }}
-                >
-                  {c.name[0]}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                />
+                <span style={{ color: T.text, fontSize: 13, fontWeight: 500 }}>
+                  {error}
+                </span>
+              </div>
+            )}
+
+            {loading && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                {[0, 1, 2].map((i) => (
                   <div
+                    key={`skel-${i}`}
+                    className="surface-card"
+                    style={{
+                      padding: "14px 16px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                    }}
+                  >
+                    <SkelBar w={42} h={42} radius={21} />
+                    <div style={{ flex: 1 }}>
+                      <SkelBar w={140} h={12} />
+                      <div style={{ height: 8 }} />
+                      <SkelBar w={220} h={10} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!loading && rows.length === 0 && !error && (
+              <div
+                className="surface-card"
+                style={{
+                  padding: 40,
+                  textAlign: "center",
+                  color: T.textMuted,
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}
+              >
+                No conversations in the last 30 days. Run a sync from the Admin
+                → Health tab if this seems wrong.
+              </div>
+            )}
+
+            {!loading &&
+              rows.map((c) => {
+                const initial = (c.contact_name || "?")[0].toUpperCase();
+                const unread = Number(c.unread_count) || 0;
+                return (
+                  <div
+                    key={c.ghl_conversation_id}
+                    onClick={() => setSelected(c)}
+                    className="surface-card interactive"
                     style={{
                       display: "flex",
-                      justifyContent: "space-between",
                       alignItems: "center",
+                      gap: 14,
+                      padding: "14px 16px",
+                      marginBottom: 8,
                     }}
                   >
-                    <span
+                    <div
                       style={{
-                        fontSize: 14,
-                        fontWeight: c.unread > 0 ? 500 : 400,
-                        color: T.textHi,
-                      }}
-                    >
-                      {c.name}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: T.textDim,
+                        width: 42,
+                        height: 42,
+                        borderRadius: "50%",
+                        background: T.airaBlueDim,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 15,
+                        fontWeight: 500,
+                        color: T.airaBlue,
+                        fontFamily: "'Outfit',sans-serif",
                         flexShrink: 0,
-                        marginLeft: 8,
                       }}
                     >
-                      {c.time}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: T.textMuted,
-                      marginTop: 2,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {c.direction === "out" && (
-                      <span style={{ color: T.textDim }}>You: </span>
+                      {initial}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 14,
+                            fontWeight: unread > 0 ? 500 : 400,
+                            color: T.textHi,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {c.contact_name || "(unknown)"}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: T.textDim,
+                            flexShrink: 0,
+                            marginLeft: 8,
+                          }}
+                        >
+                          {relTime(c.last_message_at)}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: T.textMuted,
+                          marginTop: 2,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {c.last_message_body || "(no preview)"}
+                      </div>
+                      {aggregate && locNameById[c.ghl_location_id] && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: T.textMuted,
+                            marginTop: 2,
+                          }}
+                        >
+                          📍 {locNameById[c.ghl_location_id]}
+                        </div>
+                      )}
+                    </div>
+                    {unread > 0 && (
+                      <div
+                        style={{
+                          background: T.airaBlue,
+                          color: "#ffffff",
+                          fontSize: 10,
+                          fontWeight: 500,
+                          padding: "2px 7px",
+                          borderRadius: 10,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {unread}
+                      </div>
                     )}
-                    {c.lastMsg}
                   </div>
-                </div>
-                {c.unread > 0 && (
-                  <div
-                    style={{
-                      background: T.airaBlue,
-                      color: "#ffffff",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      padding: "2px 7px",
-                      borderRadius: 10,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {c.unread}
-                  </div>
-                )}
-              </div>
-            ))}
+                );
+              })}
           </div>
         );
       }
@@ -9824,19 +10792,35 @@
           setScreen("dashboard");
         };
 
+        // Leads + Messages follow the view mode: location view → scoped to
+        // the drilled-in gym; territory/triage view (multi-location) →
+        // aggregated across the VP's accessible locations.
+        const aggregateLists = multi && viewMode !== "location";
+        const showToast = (t) => {
+          setToast(t);
+          setTimeout(() => setToast(null), 4500);
+        };
+
         const renderScreen = () => {
           if (selectedLead)
             return (
               <LeadDetail
                 lead={selectedLead}
                 onBack={() => setSelectedLead(null)}
-                selectedLocationId={selectedLocationId}
                 onBook={() =>
                   openBooking({
-                    query:
-                      `${selectedLead.first || ""} ${selectedLead.last || ""}`.trim(),
+                    contact: selectedLead.contact_id
+                      ? {
+                          ghl_contact_id: selectedLead.contact_id,
+                          full_name: selectedLead.full_name,
+                          phone: selectedLead.phone,
+                        }
+                      : null,
+                    query: selectedLead.full_name || "",
                   })
                 }
+                onToast={showToast}
+                onChanged={bumpCallLogVersion}
               />
             );
           let dashboardEl;
@@ -9907,16 +10891,20 @@
             case "leads":
               return (
                 <LeadsScreen
-                  data={data}
-                  onSelect={(l) => setSelectedLead(l)}
                   selectedLocationId={selectedLocationId}
+                  accessibleLocations={accessibleLocations}
+                  aggregate={aggregateLists}
+                  onSelect={(l) => setSelectedLead(l)}
                 />
               );
             case "conversations":
               return (
                 <ConversationsScreen
-                  data={data}
                   selectedLocationId={selectedLocationId}
+                  accessibleLocations={accessibleLocations}
+                  aggregate={aggregateLists}
+                  profile={profile}
+                  onToast={showToast}
                 />
               );
             case "appointments":
@@ -10263,13 +11251,12 @@
               />
               <NavItem
                 icon="👥"
-                label="Leads"
+                label={aggregateLists ? "All Leads" : "Leads"}
                 active={screen === "leads" || !!selectedLead}
                 onClick={() => {
                   setScreen("leads");
                   setSelectedLead(null);
                 }}
-                count={data.leads.filter((l) => l.status === "New Lead").length}
               />
               <NavItem
                 icon="💬"
@@ -10279,7 +11266,6 @@
                   setScreen("conversations");
                   setSelectedLead(null);
                 }}
-                count={unreadCount}
               />
               <NavItem
                 icon="📅"

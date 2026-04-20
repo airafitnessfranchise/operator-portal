@@ -393,6 +393,142 @@ async function syncGhlStaff(
   return rows.length;
 }
 
+// Pull conversation metadata from /conversations/search and cap the
+// number of full-thread /messages fetches per bulk sync so the whole
+// run fits within the 150s edge-function budget. Threads beyond the
+// cap get hydrated on-demand by ghl-get-conversation-thread when the
+// user taps into a row. Search results are already sorted by
+// last_message_date desc, so the top-N cap is exactly the "most
+// recently active" slice.
+const CONV_WINDOW_DAYS = 30;
+const CONV_MAX_PAGES = 10;
+const CONV_THREAD_FETCH_CAP = 40;
+
+async function syncConversations(
+  supabase: SupabaseClient,
+  apiKey: string,
+  locationId: string,
+  warnings: string[],
+): Promise<number> {
+  const sinceMs = Date.now() - CONV_WINDOW_DAYS * 86400000;
+  let startAfter: number | null = null;
+  let startAfterId: string | null = null;
+  let pages = 0;
+  let total = 0;
+  let threadsFetched = 0;
+  let stop = false;
+
+  while (!stop && pages < CONV_MAX_PAGES) {
+    const qs = new URLSearchParams({
+      locationId,
+      limit: "100",
+      sort: "desc",
+      sortBy: "last_message_date",
+    });
+    if (startAfterId && startAfter != null) {
+      qs.set("startAfterId", startAfterId);
+      qs.set("startAfterDate", String(startAfter));
+    }
+    let data: any;
+    try {
+      data = await ghlFetch(`/conversations/search?${qs.toString()}`, apiKey);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      warnings.push(`conversations: search failed for ${locationId}: ${msg}`);
+      return total;
+    }
+    const convos: any[] = data.conversations || [];
+    if (convos.length === 0) break;
+
+    const rows: any[] = [];
+    for (const c of convos) {
+      const lastMsgAt =
+        c.lastMessageDate ||
+        c.lastMessageAt ||
+        c.lastActivity ||
+        c.updatedAt ||
+        null;
+      const lastMs = lastMsgAt ? new Date(lastMsgAt).getTime() : 0;
+      if (lastMs && lastMs < sinceMs) {
+        stop = true;
+        break;
+      }
+
+      // Only hydrate the thread for the top CONV_THREAD_FETCH_CAP
+      // conversations. The rest get their thread on-demand when tapped
+      // (ghl-get-conversation-thread). GHL returns messages in
+      // /messages.messages; some tenants nest under .messages[0].messages.
+      let thread: any[] | null = null;
+      if (threadsFetched < CONV_THREAD_FETCH_CAP) {
+        try {
+          const mData = await ghlFetch(
+            `/conversations/${encodeURIComponent(c.id)}/messages`,
+            apiKey,
+          );
+          const direct = mData?.messages?.messages || mData?.messages;
+          thread = Array.isArray(direct) ? direct : [];
+          threadsFetched++;
+          await sleep(REQUEST_DELAY_MS);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          warnings.push(
+            `conversations: messages fetch failed for ${c.id}: ${msg}`,
+          );
+        }
+      }
+
+      const contactName =
+        c.fullName ||
+        c.contactName ||
+        [c.firstName, c.lastName].filter(Boolean).join(" ").trim() ||
+        null;
+
+      const row: Record<string, unknown> = {
+        ghl_conversation_id: c.id,
+        ghl_location_id: c.locationId || locationId,
+        ghl_contact_id: c.contactId || null,
+        contact_name: contactName,
+        last_message_body: c.lastMessageBody || null,
+        last_message_type: c.lastMessageType || null,
+        last_message_at: toTimestamptz(lastMsgAt),
+        unread_count: typeof c.unreadCount === "number" ? c.unreadCount : 0,
+        synced_at: new Date().toISOString(),
+      };
+      if (thread !== null) row.full_thread = thread;
+      rows.push(row);
+    }
+
+    if (rows.length > 0) {
+      const { error } = await supabase
+        .from("conversations")
+        .upsert(rows, { onConflict: "ghl_conversation_id" });
+      if (error) {
+        warnings.push(`conversations upsert failed: ${error.message}`);
+        return total;
+      }
+      total += rows.length;
+    }
+
+    pages++;
+    const lastConvo = convos[convos.length - 1];
+    const lastDate =
+      lastConvo?.lastMessageDate ||
+      lastConvo?.lastMessageAt ||
+      lastConvo?.updatedAt;
+    if (stop || convos.length < 100 || !lastDate) break;
+    startAfterId = lastConvo.id;
+    startAfter = new Date(lastDate).getTime();
+    await sleep(REQUEST_DELAY_MS);
+  }
+
+  if (pages >= CONV_MAX_PAGES) {
+    warnings.push(
+      `conversations: hit CONV_MAX_PAGES (${CONV_MAX_PAGES}) for ${locationId}`,
+    );
+  }
+  return total;
+}
+
 async function syncOneLocation(
   supabase: SupabaseClient,
   ghlLocationId: string,
@@ -470,12 +606,20 @@ async function syncOneLocation(
       ghlLocationId,
       warnings,
     );
+    await sleep(REQUEST_DELAY_MS);
+    const conversations = await syncConversations(
+      supabase,
+      ghlApiKey,
+      ghlLocationId,
+      warnings,
+    );
 
     const counts = {
       contacts,
       opportunities,
       appointments,
       staff,
+      conversations,
       stages_discovered: stagesDiscovered,
     };
 
