@@ -11655,6 +11655,11 @@
                 }
                 if (event === "SIGNED_IN" && sess) {
                   knownUserId = newUserId;
+                  // Belt-and-suspenders: wipe any nav cursor from a
+                  // prior session so a fresh login never inherits the
+                  // previous user's view (OS-killed tabs can leave
+                  // NAV_KEY behind after handleLogout never ran).
+                  sessionStorage.removeItem(NAV_KEY);
                   const pending =
                     sessionStorage.getItem(PENDING_FLOW_KEY) ||
                     inviteCtx.flowType;
