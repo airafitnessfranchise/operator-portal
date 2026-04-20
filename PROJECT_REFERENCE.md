@@ -1,6 +1,6 @@
 # Aira Operator Portal — Project Reference
 
-**Last updated:** April 18, 2026
+**Last updated:** April 20, 2026
 **Owner:** Mike Bell
 **Purpose:** Single source of truth for what we're building, why, and how everything connects.
 
@@ -127,17 +127,17 @@ As of April 18, 2026, the following is live and working:
 
 ### Phase 9: Admin Onboarding Suite ✅ SHIPPED
 
-| Feature                                                                     | Status  | Notes                                                                  |
-| --------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------- |
-| ⚙️ Admin Onboarding entry point (admin-only)                                | ✅ Live | In the Settings drawer, opens a full-screen three-tab overlay          |
-| **Locations tab**: add / edit / sync / pipeline-stage editor                | ✅ Live | `admin-create-location` + `admin-update-location` Edge Functions       |
-| Inline pipeline-stage flag toggles                                          | ✅ Live | `pipeline_stages_admin_write` RLS policy for admin-only writes         |
-| `ghl_staff` cache table (synced per location)                               | ✅ Live | Sync pulls `GET /users/?locationId=X` into a cache admin UIs read from |
-| **People tab**: invite, link to GHL staff, edit role/locations              | ✅ Live | `admin-invite-user` + `admin-update-user` Edge Functions               |
-| Auto-match by email when linking to existing GHL staff                      | ✅ Live | Falls back to neutral "Portal-only" pill (no warning)                  |
-| Portal-only user architecture                                               | ✅ Live | `users.ghl_user_id = null` is a fully supported state                  |
-| Friendly 409 on duplicate GHL staff link                                    | ✅ Live | `users_ghl_user_id_key` constraint mapped to clean error               |
-| **Health tab**: status cards + integrity checks + sync-all + sync_log table | ✅ Live | `sync_log` has admin-only RLS SELECT                                   |
+| Feature                                                                     | Status  | Notes                                                                          |
+| --------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------ |
+| ⚙️ Admin Onboarding entry point (admin-only)                                | ✅ Live | In the Settings drawer, opens a full-screen three-tab overlay                  |
+| **Locations tab**: add / edit / sync / pipeline-stage editor                | ✅ Live | `admin-create-location` + `admin-update-location` Edge Functions               |
+| Inline pipeline-stage flag toggles                                          | ✅ Live | `pipeline_stages_admin_write` RLS policy for admin-only writes                 |
+| `ghl_staff` cache table (synced per location)                               | ✅ Live | Sync pulls `GET /users/?locationId=X` into a cache admin UIs read from         |
+| **People tab**: invite, link to GHL staff, edit role/locations, remove      | ✅ Live | `admin-invite-user` + `admin-update-user` + `admin-delete-user` Edge Functions |
+| Auto-match by email when linking to existing GHL staff                      | ✅ Live | Falls back to neutral "Portal-only" pill (no warning)                          |
+| Portal-only user architecture                                               | ✅ Live | `users.ghl_user_id = null` is a fully supported state                          |
+| Friendly 409 on duplicate GHL staff link                                    | ✅ Live | `users_ghl_user_id_key` constraint mapped to clean error                       |
+| **Health tab**: status cards + integrity checks + sync-all + sync_log table | ✅ Live | `sync_log` has admin-only RLS SELECT                                           |
 
 ### Locations Configured
 
@@ -302,14 +302,15 @@ All tables live in `public` and have RLS enabled.
 
 All deployed with `--no-verify-jwt` (the gateway passes through; our functions verify JWT + role internally).
 
-| Function                | Purpose                                                                                                             | Caller requirements                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `sync-ghl-to-cache`     | Pulls GHL contacts/opps/appointments/staff into cache tables; auto-discovers pipelines for new locations            | Any authenticated user _(not yet admin-gated — see Known Issues)_ |
-| `ghl-book-appointment`  | Creates a calendar event in GHL, then upserts the cache with `portal_assigned_to` set                               | User with `can_access_ghl_location(ghl_location_id)`              |
-| `admin-create-location` | Inserts a new `locations` row                                                                                       | Admin only (verified via `current_user_role()`)                   |
-| `admin-update-location` | Updates a location; empty strings mean "keep existing" (never wipes `ghl_api_key`)                                  | Admin only                                                        |
-| `admin-invite-user`     | Creates auth user (no email — avoids rate limit) + `users` row + `user_locations`; returns optional `recovery_link` | Admin only                                                        |
-| `admin-update-user`     | Updates user scalars (with friendly 409 on duplicate `ghl_user_id` link) + replaces `user_locations`                | Admin only                                                        |
+| Function                | Purpose                                                                                                                                                                                                                        | Caller requirements                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `sync-ghl-to-cache`     | Pulls GHL contacts/opps/appointments/staff into cache tables; auto-discovers pipelines for new locations                                                                                                                       | Any authenticated user _(not yet admin-gated — see Known Issues)_ |
+| `ghl-book-appointment`  | Creates a calendar event in GHL, then upserts the cache with `portal_assigned_to` set                                                                                                                                          | User with `can_access_ghl_location(ghl_location_id)`              |
+| `admin-create-location` | Inserts a new `locations` row                                                                                                                                                                                                  | Admin only (verified via `current_user_role()`)                   |
+| `admin-update-location` | Updates a location; empty strings mean "keep existing" (never wipes `ghl_api_key`)                                                                                                                                             | Admin only                                                        |
+| `admin-invite-user`     | `auth.admin.inviteUserByEmail` (single call — creates auth user AND sends invite email) + `users` row + `user_locations`; full rollback on any downstream failure                                                              | Admin only                                                        |
+| `admin-update-user`     | Updates user scalars (with friendly 409 on duplicate `ghl_user_id` link) + replaces `user_locations`                                                                                                                           | Admin only                                                        |
+| `admin-delete-user`     | Removes a portal user: deletes `user_locations` + `call_logs`, NULLs `coaching_sessions.coach_user_id` (history preserved), deletes `public.users` row, deletes auth user. Refuses self-delete and last-remaining-admin delete | Admin only                                                        |
 
 ---
 
