@@ -4313,6 +4313,51 @@
           });
         };
 
+        // Optimistic append pattern: the bubble goes into full_thread
+        // immediately with _status "sending"; on 2xx we reload, which
+        // replaces the optimistic row with the real server-appended
+        // message (Fix 1 in ghl-send-message writes to public.conversations
+        // before returning). On error we DON'T roll back — the failed
+        // bubble stays visible with a retry affordance so the rep isn't
+        // left wondering what happened.
+        const markStatusOnMessage = (localId, nextStatus) => {
+          setSelected((prev) => {
+            if (!prev) return prev;
+            const thread = Array.isArray(prev.full_thread)
+              ? prev.full_thread
+              : [];
+            return {
+              ...prev,
+              full_thread: thread.map((m) =>
+                m && m._localId === localId ? { ...m, _status: nextStatus } : m,
+              ),
+            };
+          });
+        };
+
+        const fireSend = async (localId, msg, convoSnapshot) => {
+          try {
+            await callEdgeFunction("ghl-send-message", {
+              ghl_location_id: convoSnapshot.ghl_location_id,
+              ghl_contact_id: convoSnapshot.ghl_contact_id,
+              type: "SMS",
+              message: msg,
+            });
+            // Fix 1 has already written to the cache. Reloading pulls
+            // the authoritative thread and the optimistic row drops out.
+            await load();
+          } catch (e) {
+            markStatusOnMessage(localId, "failed");
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: e && e.message ? e.message : "Send failed",
+              });
+            }
+            throw e;
+          }
+        };
+
         const submitSend = async () => {
           const msg = reply.trim();
           if (!msg || !selected || sending) return;
@@ -4326,46 +4371,57 @@
             return;
           }
           setSending(true);
+          const localId = `local-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`;
+          const nowIso = new Date().toISOString();
           const optimistic = {
-            id: `local-${Date.now()}`,
+            id: localId,
+            _localId: localId,
+            _status: "sending",
+            _optimistic: true,
             direction: "outbound",
             body: msg,
-            dateAdded: new Date().toISOString(),
+            dateAdded: nowIso,
             type: "SMS",
             messageType: "TYPE_SMS",
-            _optimistic: true,
           };
           const priorThread = Array.isArray(selected.full_thread)
             ? selected.full_thread
             : [];
+          const convoSnapshot = {
+            ghl_location_id: selected.ghl_location_id,
+            ghl_contact_id: selected.ghl_contact_id,
+          };
           setSelected({
             ...selected,
             full_thread: [...priorThread, optimistic],
             last_message_body: msg,
-            last_message_at: optimistic.dateAdded,
+            last_message_at: nowIso,
           });
           setReply("");
           try {
-            await callEdgeFunction("ghl-send-message", {
-              ghl_location_id: selected.ghl_location_id,
-              ghl_contact_id: selected.ghl_contact_id,
-              type: "SMS",
-              message: msg,
-            });
-            await load();
-          } catch (e) {
-            // Roll back the optimistic append
-            setSelected({
-              ...selected,
-              full_thread: priorThread,
-            });
-            setReply(msg);
-            if (onToast) {
-              onToast({
-                kind: "error",
-                text: e && e.message ? e.message : "Send failed",
-              });
-            }
+            await fireSend(localId, msg, convoSnapshot);
+          } catch {
+            /* status already marked; retry lives on the bubble */
+          } finally {
+            setSending(false);
+          }
+        };
+
+        const retryFailedMessage = async (m) => {
+          if (!m || !m._localId || !selected) return;
+          const convoSnapshot = {
+            ghl_location_id: selected.ghl_location_id,
+            ghl_contact_id: selected.ghl_contact_id,
+          };
+          if (!convoSnapshot.ghl_contact_id) return;
+          markStatusOnMessage(m._localId, "sending");
+          setSending(true);
+          try {
+            await fireSend(m._localId, m.body || "", convoSnapshot);
+          } catch {
+            /* already marked failed */
           } finally {
             setSending(false);
           }
@@ -4506,6 +4562,14 @@
                     dirRaw === "received";
                   const body = m.body || m.message || m.text || "";
                   const t = m.dateAdded || m.createdAt || m.date || null;
+                  const status = m._status || null;
+                  const isSending = status === "sending";
+                  const isFailed = status === "failed";
+                  const bubbleBg = isFailed
+                    ? T.red
+                    : incoming
+                      ? T.surfaceAlt
+                      : T.airaBlue;
                   return (
                     <div
                       key={m.id || `m-${i}`}
@@ -4521,19 +4585,54 @@
                         style={{
                           padding: "10px 14px",
                           borderRadius: 14,
-                          background: incoming ? T.surfaceAlt : T.airaBlue,
-                          color: incoming ? T.text : "#ffffff",
-                          border: incoming ? `0.5px solid ${T.border}` : "none",
+                          background: bubbleBg,
+                          color: incoming && !isFailed ? T.text : "#ffffff",
+                          border:
+                            incoming && !isFailed
+                              ? `0.5px solid ${T.border}`
+                              : "none",
                           fontSize: 14,
                           lineHeight: 1.45,
-                          opacity: m._optimistic ? 0.75 : 1,
+                          opacity: isSending ? 0.6 : 1,
                           whiteSpace: "pre-wrap",
                           wordBreak: "break-word",
                         }}
                       >
                         {body}
                       </div>
-                      {t && (
+                      {isSending && (
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: T.textDim,
+                            alignSelf: "flex-end",
+                          }}
+                        >
+                          Sending…
+                        </div>
+                      )}
+                      {isFailed && (
+                        <button
+                          type="button"
+                          onClick={() => retryFailedMessage(m)}
+                          disabled={sending}
+                          style={{
+                            alignSelf: "flex-end",
+                            background: "transparent",
+                            border: "none",
+                            padding: 0,
+                            fontSize: 11,
+                            color: T.red,
+                            cursor: sending ? "not-allowed" : "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          <span style={{ fontSize: 12 }}>↻</span> Tap to retry
+                        </button>
+                      )}
+                      {t && !isSending && !isFailed && (
                         <div
                           style={{
                             fontSize: 10,

@@ -168,15 +168,149 @@ Deno.serve(async (req) => {
     );
   }
   const ghlData = await ghlRes.json().catch(() => ({}));
+  const ghlMessageId: string | null = ghlData?.messageId || ghlData?.id || null;
+  const ghlConversationId: string | null = ghlData?.conversationId || null;
 
   console.log(
     `[ghl-send-message] sent ${type} to ${ghl_contact_id} at ${ghl_location_id}`,
   );
 
+  // Cache write. Without this, the portal's conversations view lags the
+  // live GHL thread until the next sync-ghl-to-cache cycle (could be
+  // minutes). Reps then text again thinking it failed, or pop GHL to
+  // verify — both violate the "portal is source of truth" rule
+  // (decision 2026-04-20). We mirror the shape that sync-ghl-to-cache
+  // writes so the thread render treats this message identically to
+  // ones pulled from GHL: direction/body/dateAdded/messageType are
+  // load-bearing for the UI. Best-effort: if this write fails, we still
+  // report success (GHL has the message) and log to sync_log so the
+  // next sync will repair.
+  const nowIso = new Date().toISOString();
+  const messageTypeStr =
+    type === "SMS"
+      ? "TYPE_SMS"
+      : type === "Email"
+        ? "TYPE_EMAIL"
+        : `TYPE_${type.toUpperCase()}`;
+  const appended: Record<string, unknown> = {
+    id: ghlMessageId || `srv-${Date.now()}`,
+    body: message,
+    direction: "outbound",
+    status: "sent",
+    source: "api",
+    contactId: ghl_contact_id,
+    locationId: ghl_location_id,
+    conversationId: ghlConversationId,
+    dateAdded: nowIso,
+    dateUpdated: nowIso,
+    attachments: [],
+    contentType: type === "Email" ? "text/html" : "text/plain",
+    messageType: messageTypeStr,
+  };
+
+  try {
+    // Prefer lookup by conversation_id (authoritative from GHL's response).
+    let convoRow: {
+      id: string;
+      ghl_conversation_id: string;
+      full_thread: unknown;
+    } | null = null;
+    if (ghlConversationId) {
+      const { data } = await adminClient
+        .from("conversations")
+        .select("id, ghl_conversation_id, full_thread")
+        .eq("ghl_conversation_id", ghlConversationId)
+        .maybeSingle();
+      convoRow = (data as typeof convoRow) || null;
+    }
+    // Fallback: some GHL tenants drop conversationId on the response.
+    // Use the (location, contact) pair — at most one live conversation
+    // per contact per location in practice.
+    if (!convoRow) {
+      const { data } = await adminClient
+        .from("conversations")
+        .select("id, ghl_conversation_id, full_thread")
+        .eq("ghl_location_id", ghl_location_id)
+        .eq("ghl_contact_id", ghl_contact_id)
+        .order("last_message_at", {
+          ascending: false,
+          nullsFirst: false,
+        })
+        .limit(1)
+        .maybeSingle();
+      convoRow = (data as typeof convoRow) || null;
+    }
+
+    const truncatedBody =
+      message.length > 500 ? message.slice(0, 500) : message;
+
+    if (convoRow) {
+      const existing = Array.isArray(convoRow.full_thread)
+        ? (convoRow.full_thread as unknown[])
+        : [];
+      const { error: upErr } = await adminClient
+        .from("conversations")
+        .update({
+          full_thread: [...existing, appended],
+          last_message_body: truncatedBody,
+          last_message_type: messageTypeStr,
+          last_message_at: nowIso,
+          synced_at: nowIso,
+        })
+        .eq("id", convoRow.id);
+      if (upErr) throw new Error(`update: ${upErr.message}`);
+    } else if (ghlConversationId) {
+      // New thread — GHL gave us the conversation_id, create the row.
+      // Pull contact name for list-row display; null is fine if absent.
+      const { data: contact } = await adminClient
+        .from("contacts")
+        .select("full_name, first_name, last_name")
+        .eq("ghl_contact_id", ghl_contact_id)
+        .maybeSingle();
+      const contactName =
+        (contact as any)?.full_name ||
+        [(contact as any)?.first_name, (contact as any)?.last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim() ||
+        null;
+      const { error: insErr } = await adminClient.from("conversations").insert({
+        ghl_conversation_id: ghlConversationId,
+        ghl_location_id,
+        ghl_contact_id,
+        contact_name: contactName,
+        last_message_body: truncatedBody,
+        last_message_type: messageTypeStr,
+        last_message_at: nowIso,
+        unread_count: 0,
+        full_thread: [appended],
+        synced_at: nowIso,
+      });
+      if (insErr) throw new Error(`insert: ${insErr.message}`);
+    }
+    // If we have neither a matching row nor a conversation_id from GHL,
+    // skip — the next sync-ghl-to-cache run will discover and cache it.
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[ghl-send-message] cache write failed: ${msg}`);
+    try {
+      await adminClient.from("sync_log").insert({
+        status: "failed",
+        sync_type: "send_message_cache",
+        ghl_location_id,
+        error_message: `cache write after send failed: ${msg.slice(0, 400)}`,
+        started_at: nowIso,
+        completed_at: new Date().toISOString(),
+      });
+    } catch {
+      /* noop — don't block the success response on a log write */
+    }
+  }
+
   return jsonResp({
     ok: true,
-    message_id: ghlData?.messageId || ghlData?.id || null,
-    conversation_id: ghlData?.conversationId || null,
+    message_id: ghlMessageId,
+    conversation_id: ghlConversationId,
     ghl: ghlData || null,
   });
 });
