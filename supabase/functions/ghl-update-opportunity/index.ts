@@ -79,14 +79,61 @@ Deno.serve(async (req) => {
   const requestedStatus =
     typeof body?.status === "string" ? body.status.trim().toLowerCase() : "";
 
+  // Sale-value fields. Only monetary_value is mirrored to GHL
+  // (monetaryValue); is_pif + pif_amount live in public.opportunities
+  // only — GHL has no native PIF tracking. `undefined` means "don't
+  // touch"; `null` is a legitimate clear for is_pif + pif_amount when
+  // an edit demotes a prior PIF sale.
+  const monetary_value: number | null | undefined =
+    body?.monetary_value === undefined || body?.monetary_value === null
+      ? body?.monetary_value
+      : Number(body.monetary_value);
+  if (
+    monetary_value !== undefined &&
+    monetary_value !== null &&
+    (!Number.isFinite(monetary_value) || monetary_value < 0)
+  ) {
+    return jsonResp(
+      { ok: false, error: "monetary_value must be a non-negative number" },
+      400,
+    );
+  }
+  const is_pif: boolean | null | undefined =
+    typeof body?.is_pif === "boolean"
+      ? body.is_pif
+      : body?.is_pif === null
+        ? null
+        : undefined;
+  const pif_amount: number | null | undefined =
+    body?.pif_amount === undefined || body?.pif_amount === null
+      ? body?.pif_amount
+      : Number(body.pif_amount);
+  if (
+    pif_amount !== undefined &&
+    pif_amount !== null &&
+    (!Number.isFinite(pif_amount) || pif_amount < 0)
+  ) {
+    return jsonResp(
+      { ok: false, error: "pif_amount must be a non-negative number" },
+      400,
+    );
+  }
+
   if (!opportunity_id) {
     return jsonResp({ ok: false, error: "opportunity_id is required" }, 400);
   }
-  if (!pipeline_stage_id && !requestedStatus) {
+  if (
+    !pipeline_stage_id &&
+    !requestedStatus &&
+    monetary_value === undefined &&
+    is_pif === undefined &&
+    pif_amount === undefined
+  ) {
     return jsonResp(
       {
         ok: false,
-        error: "pipeline_stage_id or status must be provided",
+        error:
+          "pipeline_stage_id, status, monetary_value, is_pif, or pif_amount must be provided",
       },
       400,
     );
@@ -243,6 +290,12 @@ Deno.serve(async (req) => {
   if (actingGhlUserId) {
     ghlBody.assignedTo = actingGhlUserId;
   }
+  // GHL's only sale-value field is monetaryValue (monthly membership
+  // price). is_pif + pif_amount stay portal-only because GHL has no
+  // equivalent — the sync never overwrites them.
+  if (monetary_value !== undefined) {
+    ghlBody.monetaryValue = monetary_value;
+  }
 
   const ghlRes = await fetch(
     `${GHL_BASE}/opportunities/${encodeURIComponent(opportunity_id)}`,
@@ -284,13 +337,24 @@ Deno.serve(async (req) => {
   }
   if (requestedStatus) cachePatch.status = requestedStatus;
   if (actingGhlUserId) cachePatch.assigned_to = actingGhlUserId;
+  // Sale-value mirror — monetary_value survives from GHL, is_pif +
+  // pif_amount are portal-only. sold_at is stamped whenever monetary_value
+  // is set in this call (either a fresh close or an edit that sharpens
+  // the original close's data — we overwrite either way; the old value
+  // is the one that was wrong).
+  if (monetary_value !== undefined) {
+    cachePatch.monetary_value = monetary_value;
+    cachePatch.sold_at = new Date().toISOString();
+  }
+  if (is_pif !== undefined) cachePatch.is_pif = is_pif;
+  if (pif_amount !== undefined) cachePatch.pif_amount = pif_amount;
 
   const { data: updated, error: updateErr } = await adminClient
     .from("opportunities")
     .update(cachePatch)
     .eq("ghl_opportunity_id", opportunity_id)
     .select(
-      "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, status, name, assigned_to, updated_at_ghl",
+      "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, status, name, assigned_to, monetary_value, is_pif, pif_amount, sold_at, updated_at_ghl",
     )
     .maybeSingle();
   if (updateErr) {

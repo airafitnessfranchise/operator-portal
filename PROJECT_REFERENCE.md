@@ -347,19 +347,21 @@ All deployed with `--no-verify-jwt` (the gateway passes through; our functions v
 
 Source: **Aira 5-Day Training v8**, page 35 — "Key Numbers Every Franchisee Must Know"
 
-| Metric                         | Aira Target     | Portal Threshold (Red)             |
-| ------------------------------ | --------------- | ---------------------------------- |
-| Min ad spend / day             | $40             | N/A (informational)                |
-| Target leads / day             | 8-10            | N/A                                |
-| Lead → Appointment rate        | 50%+            | <50% = "Appointments broken"       |
-| Show rate                      | 40-50%          | <40% = "Shows broken"              |
-| **Close rate of shows**        | **70%+**        | **<70% = "Closing broken"**        |
-| **ADPS (Avg Dollar Per Sale)** | **$220+**       | **<$220 = "Fees waived too fast"** |
-| PIF attach rate                | 20% of sales    | —                                  |
-| Attrition rate                 | ≤7%             | —                                  |
-| CPL (Cost Per Lead)            | ≤$20            | —                                  |
-| **Month 1 memberships**        | **40 sign-ups** | Floor is 30% lead-to-sale          |
-| **Month 1 revenue**            | **$15,000+**    | —                                  |
+| Metric                         | Aira Target  | Portal Threshold (Red)             |
+| ------------------------------ | ------------ | ---------------------------------- |
+| Min ad spend / day             | $40          | N/A (informational)                |
+| Target leads / day             | 8-10         | N/A                                |
+| Lead → Appointment rate        | 50%+         | <50% = "Appointments broken"       |
+| Show rate                      | 40-50%       | <40% = "Shows broken"              |
+| **Close rate of shows**        | **70%+**     | **<70% = "Closing broken"**        |
+| **ADPS (Avg Dollar Per Sale)** | **$220+**    | **<$220 = "Fees waived too fast"** |
+| PIF attach rate                | 20% of sales | —                                  |
+
+> **As of April 21, 2026, ADPS is calculated from real `opportunities.monetary_value` entries when available.** Locations with <5 real-value sales in the period fall back to the $220 benchmark for the dollar math (the Triage card shows a "Using Aira benchmark (sample too small)" pill). Real-sale values are captured via the Sale modal that fires on any stage → `counts_as_sale` transition, written to GHL's `monetaryValue` field AND `opportunities.monetary_value`. PIF attach + amount live in `opportunities.is_pif` + `opportunities.pif_amount` (portal-only; GHL has no native PIF field).
+> | Attrition rate | ≤7% | — |
+> | CPL (Cost Per Lead) | ≤$20 | — |
+> | **Month 1 memberships** | **40 sign-ups** | Floor is 30% lead-to-sale |
+> | **Month 1 revenue** | **$15,000+** | — |
 
 ### The Rule of 3 (Page 36 of Training)
 
@@ -676,6 +678,9 @@ Decision: when a multi-location VP is in Territory/Triage view, bottom nav shows
 
 **April 20, 2026 — Portal stage changes auto-assign the acting user in GHL.**
 Going forward, any portal user who marks an opportunity as Booked or Sold is automatically stamped as the assigned rep in GHL via `ghl-update-opportunity` and `ghl-book-appointment`. Attribution happens at the point of action, not as a separate data-entry step. Historical opportunities remain unassigned (not retro-attributing). Reasoning: franchisees don't need to remember — the system enforces it. This is how the portal becomes the source of truth for rep performance, not just a viewer of GHL. A new standalone `ghl-assign-opportunity` function supports manual reassignment (e.g. a franchisee claiming ownership of an existing lead); sales_rep role is self-only, managers/VPs/admins/franchisees can reassign to anyone in that location's `ghl_staff`.
+
+**April 20, 2026 — Sale amount captured at point of close.**
+When a portal user marks an opportunity as Sold (any stage where `counts_as_sale = true`), a required Sale modal captures the actual monthly membership price + optional PIF attach. Stored in `opportunities.monetary_value` (written through to GHL's `monetaryValue`) and `opportunities.is_pif` / `opportunities.pif_amount` (portal-only — GHL has no native PIF field). Dollar math throughout the portal (ADPS, dollars-on-the-table, leaderboard) now uses real values where available, falling back to the $220 Aira benchmark only when the location has <5 real-value sales this period (noise guard). This is how the portal catches silent fee-waiving — the #1 franchisee failure mode per training manual v8. `location_triage` returns `real_value_sales_count`, `missing_sale_value_count`, `using_benchmark_fallback`, and `annualized_mrr` so the UI can surface the sample-size state. `rep_leaderboard` now sorts by total MRR desc (not sale count) — 10 sales at $149 is worse than 8 at $229; the default sort itself is the coaching signal.
 
 ---
 

@@ -1230,6 +1230,7 @@
         const awaitingUpdate = Number(k.awaiting_update) || 0;
         const sales = Number(k.sales) || 0;
         const revenue = Number(k.revenue) || 0;
+        const missingSaleValue = Number(k.missing_sale_value_count) || 0;
         const callsToday = Number(k.calls_today) || 0;
         const callsConnected = Number(k.calls_today_connected) || 0;
         const callsNoAnswer = Number(k.calls_today_no_answer) || 0;
@@ -1468,6 +1469,42 @@
               </div>
             )}
 
+            {!loading && missingSaleValue > 0 && (
+              <div
+                className="surface-card"
+                style={{
+                  padding: "12px 16px",
+                  marginBottom: 18,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  borderLeft: `3px solid ${T.amber}`,
+                }}
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: T.amber,
+                    flexShrink: 0,
+                  }}
+                />
+                <div
+                  style={{
+                    color: T.text,
+                    fontSize: 13,
+                    fontWeight: 500,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {missingSaleValue} sale
+                  {missingSaleValue === 1 ? "" : "s"} missing sale amount. Open
+                  the lead and tap Edit to fill it in.
+                </div>
+              </div>
+            )}
+
             <div
               className="surface-card"
               style={{
@@ -1621,6 +1658,7 @@
                   leaderboard.map((r, i) => {
                     const rsales = Number(r.sales) || 0;
                     const rrev = Number(r.revenue) || 0;
+                    const ravg = Math.round(Number(r.avg_sale) || 0);
                     const cr = Math.round(Number(r.close_rate) || 0);
                     const display = r.full_name || "Unknown";
                     const initial = (display[0] || "?").toUpperCase();
@@ -1735,7 +1773,7 @@
                             CLOSE
                           </div>
                         </div>
-                        <div style={{ textAlign: "center", minWidth: 56 }}>
+                        <div style={{ textAlign: "center", minWidth: 60 }}>
                           <div
                             style={{
                               fontSize: 14,
@@ -1755,7 +1793,30 @@
                               marginTop: 2,
                             }}
                           >
-                            REV
+                            MRR
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "center", minWidth: 52 }}>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 500,
+                              color: ravg > 0 ? T.textHi : T.textDim,
+                              fontFamily: "'Outfit',sans-serif",
+                              letterSpacing: "-0.01em",
+                            }}
+                          >
+                            {ravg > 0 ? `$${ravg.toLocaleString()}` : "—"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 9,
+                              color: T.textDim,
+                              letterSpacing: "0.1em",
+                              marginTop: 2,
+                            }}
+                          >
+                            AVG
                           </div>
                         </div>
                       </div>
@@ -1819,7 +1880,7 @@
               window.supabase
                 .from("opportunities")
                 .select(
-                  "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, assigned_to, source, created_at_ghl, updated_at_ghl",
+                  "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, assigned_to, is_pif, pif_amount, sold_at, source, created_at_ghl, updated_at_ghl",
                 )
                 .in("ghl_location_id", locIds)
                 .order("updated_at_ghl", {
@@ -1891,6 +1952,9 @@
                 opp_status: o.status,
                 monetary_value:
                   o.monetary_value != null ? Number(o.monetary_value) : null,
+                is_pif: !!o.is_pif,
+                pif_amount: o.pif_amount != null ? Number(o.pif_amount) : null,
+                sold_at: o.sold_at || null,
                 contact_source: c.source,
                 opp_source: o.source,
                 first_name: c.first_name,
@@ -2325,6 +2389,189 @@
         );
       }
 
+      // ── Sale Modal ──
+      // Fires when a user moves an opportunity to a counts_as_sale stage
+      // (either a fresh close or an "Edit sale" action on an already-sold
+      // lead). Captures the real monthly membership price + optional PIF
+      // attach so the ADPS / dollars-on-the-table math runs on actual
+      // numbers, not the $220 Aira benchmark.
+      function SaleModal({
+        title,
+        soldByName,
+        initialAmount,
+        initialIsPif,
+        initialPifAmount,
+        submitting,
+        onConfirm,
+        onCancel,
+      }) {
+        const [amount, setAmount] = useState(
+          initialAmount != null ? String(initialAmount) : "220",
+        );
+        const [isPif, setIsPif] = useState(!!initialIsPif);
+        const [pifAmount, setPifAmount] = useState(
+          initialPifAmount != null ? String(initialPifAmount) : "997",
+        );
+        const numAmount = Number(amount);
+        const numPif = Number(pifAmount);
+        const valid =
+          Number.isFinite(numAmount) &&
+          numAmount >= 0 &&
+          (!isPif || (Number.isFinite(numPif) && numPif >= 0));
+
+        const inputStyle = {
+          padding: "12px 14px",
+          borderRadius: 10,
+          border: `0.5px solid ${T.border}`,
+          background: T.surface,
+          color: T.text,
+          fontSize: 15,
+          outline: "none",
+          fontFamily: "inherit",
+          width: "100%",
+          boxSizing: "border-box",
+        };
+        const labelStyle = {
+          fontSize: 10,
+          fontWeight: 500,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: T.textMuted,
+        };
+
+        return (
+          <div style={{ ...MODAL_BACKDROP, zIndex: 350 }}>
+            <div className="fade-in" style={MODAL_CARD}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div style={MODAL_TITLE}>{title}</div>
+                <button
+                  onClick={onCancel}
+                  disabled={submitting}
+                  style={MODAL_CLOSE(submitting)}
+                >
+                  ×
+                </button>
+              </div>
+              <div>
+                <label style={labelStyle}>Sale amount ($ / mo)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="1"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  disabled={submitting}
+                  style={{ ...inputStyle, marginTop: 6 }}
+                />
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: T.textMuted,
+                    marginTop: 6,
+                  }}
+                >
+                  Monthly membership price. Aira standard is $220.
+                </div>
+              </div>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 14,
+                  color: T.text,
+                  cursor: "pointer",
+                  padding: "8px 0",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isPif}
+                  onChange={(e) => setIsPif(e.target.checked)}
+                  disabled={submitting}
+                  style={{ accentColor: T.airaBlue }}
+                />
+                Paid in Full?
+              </label>
+              {isPif && (
+                <div>
+                  <label style={labelStyle}>PIF amount ($)</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="1"
+                    value={pifAmount}
+                    onChange={(e) => setPifAmount(e.target.value)}
+                    disabled={submitting}
+                    style={{ ...inputStyle, marginTop: 6 }}
+                  />
+                </div>
+              )}
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: T.surfaceAlt,
+                  border: `0.5px solid ${T.border}`,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: T.textMuted,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    fontWeight: 500,
+                  }}
+                >
+                  Sold by
+                </span>
+                <span
+                  style={{ fontSize: 13, color: T.textHi, fontWeight: 500 }}
+                >
+                  {soldByName || "you"}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <button
+                  onClick={onCancel}
+                  disabled={submitting}
+                  className="btn-secondary"
+                  style={{ flex: 1, padding: "12px" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() =>
+                    onConfirm({
+                      monetary_value: numAmount,
+                      is_pif: isPif,
+                      pif_amount: isPif ? numPif : null,
+                    })
+                  }
+                  disabled={submitting || !valid}
+                  className="btn-primary"
+                  style={{ flex: 2, padding: "12px" }}
+                >
+                  {submitting ? "Saving…" : "Confirm Sale"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       // ── Lead Detail (real data) ──
       // `lead` here is the composed shape that LeadsScreen produced.
       // We load extra context (all opportunities for this contact, recent
@@ -2353,6 +2600,20 @@
         );
         const [assignOpen, setAssignOpen] = useState(false);
         const [savingAssign, setSavingAssign] = useState(false);
+        // Sale-value state. currentSale reflects the latest sale data we
+        // know about for THIS opportunity; seeded from lead.monetary_value
+        // on mount and overwritten on every successful sale/edit.
+        const [currentSale, setCurrentSale] = useState({
+          monetary_value:
+            lead.monetary_value != null ? Number(lead.monetary_value) : null,
+          is_pif: !!lead.is_pif,
+          pif_amount: lead.pif_amount != null ? Number(lead.pif_amount) : null,
+          sold_at: lead.sold_at || null,
+        });
+        // { pendingStage, editMode } → open the SaleModal either for a
+        // fresh close (pendingStage is the stage we'll commit on confirm)
+        // or for an edit of the already-recorded sale (editMode: true).
+        const [saleModal, setSaleModal] = useState(null);
 
         const markCall = () =>
           markPendingCall({
@@ -2368,7 +2629,7 @@
               window.supabase
                 .from("opportunities")
                 .select(
-                  "ghl_opportunity_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, assigned_to, updated_at_ghl, created_at_ghl",
+                  "ghl_opportunity_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, assigned_to, is_pif, pif_amount, sold_at, updated_at_ghl, created_at_ghl",
                 )
                 .eq("ghl_location_id", lead.location_id)
                 .eq("ghl_contact_id", lead.contact_id || "__none__")
@@ -2419,6 +2680,18 @@
               );
               setCurrentStageName(s?.name || null);
               setCurrentAssignedTo(thisOpp.assigned_to || null);
+              setCurrentSale({
+                monetary_value:
+                  thisOpp.monetary_value != null
+                    ? Number(thisOpp.monetary_value)
+                    : null,
+                is_pif: !!thisOpp.is_pif,
+                pif_amount:
+                  thisOpp.pif_amount != null
+                    ? Number(thisOpp.pif_amount)
+                    : null,
+                sold_at: thisOpp.sold_at || null,
+              });
             }
           } catch (e) {
             console.error("lead detail load failed:", e);
@@ -2437,25 +2710,43 @@
           load();
         }, [load]);
 
-        const changeStage = async (stage) => {
-          if (savingStage || stage.ghl_stage_id === currentStageId) return;
+        // Commit stage + optional sale fields through the Edge Function.
+        // Optimistic on the stage; rollback on failure.
+        const commitStageChange = async (stage, sale) => {
           const prevId = currentStageId;
           const prevName = currentStageName;
-          // Optimistic update, revert on failure
+          const prevSale = currentSale;
           setSavingStage(true);
           setCurrentStageId(stage.ghl_stage_id);
           setCurrentStageName(stage.name);
+          if (sale) {
+            setCurrentSale({
+              monetary_value: sale.monetary_value,
+              is_pif: !!sale.is_pif,
+              pif_amount: sale.pif_amount,
+              sold_at: new Date().toISOString(),
+            });
+          }
           try {
             const statusHint = stage.counts_as_sale
               ? "won"
               : stage.counts_as_no_show
                 ? "lost"
                 : "open";
-            const resp = await callEdgeFunction("ghl-update-opportunity", {
+            const payload = {
               opportunity_id: lead.opportunity_id,
               pipeline_stage_id: stage.ghl_stage_id,
               status: statusHint,
-            });
+            };
+            if (sale) {
+              payload.monetary_value = sale.monetary_value;
+              payload.is_pif = !!sale.is_pif;
+              payload.pif_amount = sale.is_pif ? sale.pif_amount : null;
+            }
+            const resp = await callEdgeFunction(
+              "ghl-update-opportunity",
+              payload,
+            );
             if (resp?.assigned_to_caller && resp?.acting_ghl_user_id) {
               setCurrentAssignedTo(resp.acting_ghl_user_id);
             }
@@ -2468,14 +2759,68 @@
                 text: `Stage updated to ${stage.name}${assignedSuffix}`,
               });
             }
+            setSaleModal(null);
             if (onChanged) onChanged();
           } catch (e) {
             setCurrentStageId(prevId);
             setCurrentStageName(prevName);
+            setCurrentSale(prevSale);
             if (onToast) {
               onToast({
                 kind: "error",
                 text: e && e.message ? e.message : "Update failed",
+              });
+            }
+          } finally {
+            setSavingStage(false);
+          }
+        };
+
+        // Stage-picker entry point. If the target stage counts as a sale,
+        // we detour through SaleModal BEFORE touching GHL — cancelling
+        // the modal keeps the stage unchanged. Non-sale stages commit
+        // immediately.
+        const changeStage = (stage) => {
+          if (savingStage || stage.ghl_stage_id === currentStageId) return;
+          if (stage.counts_as_sale) {
+            setSaleModal({ mode: "close", stage });
+            return;
+          }
+          commitStageChange(stage, null);
+        };
+
+        // Edit an already-recorded sale (monetary_value / is_pif /
+        // pif_amount only — no stage change). Same Edge Function.
+        const commitSaleEdit = async (sale) => {
+          const prevSale = currentSale;
+          setSavingStage(true);
+          setCurrentSale({
+            monetary_value: sale.monetary_value,
+            is_pif: !!sale.is_pif,
+            pif_amount: sale.pif_amount,
+            sold_at: prevSale?.sold_at || new Date().toISOString(),
+          });
+          try {
+            await callEdgeFunction("ghl-update-opportunity", {
+              opportunity_id: lead.opportunity_id,
+              monetary_value: sale.monetary_value,
+              is_pif: !!sale.is_pif,
+              pif_amount: sale.is_pif ? sale.pif_amount : null,
+            });
+            if (onToast) {
+              onToast({
+                kind: "success",
+                text: `Sale updated to $${sale.monetary_value}/mo`,
+              });
+            }
+            setSaleModal(null);
+            if (onChanged) onChanged();
+          } catch (e) {
+            setCurrentSale(prevSale);
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: e && e.message ? e.message : "Sale update failed",
               });
             }
           } finally {
@@ -2749,6 +3094,168 @@
               </div>
             </div>
 
+            {(() => {
+              // "Sold for $X/mo" summary card. Only renders when the
+              // current stage counts_as_sale AND we've captured at least
+              // monetary_value (missing = a historical sale we couldn't
+              // backfill — the changeStage modal now guarantees capture
+              // going forward).
+              if (loading) return null;
+              const activeStage = stages.find(
+                (s) => s.ghl_stage_id === currentStageId,
+              );
+              if (!activeStage || !activeStage.counts_as_sale) return null;
+              const soldByGhlId = currentAssignedTo;
+              const soldByName = soldByGhlId
+                ? staff.find((s) => s.ghl_user_id === soldByGhlId)?.full_name ||
+                  null
+                : null;
+              const canEdit = (() => {
+                if (!profile) return false;
+                const managerRoles = new Set([
+                  "admin",
+                  "regional_director",
+                  "vp",
+                  "manager",
+                  "franchisee",
+                ]);
+                if (managerRoles.has(profile.role)) return true;
+                // Sales rep can only edit their OWN sale
+                if (profile.role === "sales_rep") {
+                  const myMatch = staff.find(
+                    (s) =>
+                      (s.email || "").toLowerCase() ===
+                      (profile.email || "").toLowerCase(),
+                  );
+                  return (
+                    !!myMatch &&
+                    !!soldByGhlId &&
+                    myMatch.ghl_user_id === soldByGhlId
+                  );
+                }
+                return false;
+              })();
+              const hasValue = currentSale.monetary_value != null;
+              const soldAt = currentSale.sold_at
+                ? new Date(currentSale.sold_at).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : null;
+              return (
+                <div
+                  className="surface-card"
+                  style={{
+                    padding: 20,
+                    marginBottom: 16,
+                    borderLeft: `4px solid ${T.green}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: 10,
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 500,
+                          letterSpacing: "0.12em",
+                          textTransform: "uppercase",
+                          color: T.textMuted,
+                          marginBottom: 4,
+                        }}
+                      >
+                        Sold
+                      </div>
+                      {hasValue ? (
+                        <div
+                          style={{
+                            fontSize: 22,
+                            fontWeight: 500,
+                            color: T.textHi,
+                            fontFamily: "'Outfit',sans-serif",
+                            letterSpacing: "-0.01em",
+                          }}
+                        >
+                          ${Number(currentSale.monetary_value).toLocaleString()}
+                          <span
+                            style={{
+                              fontSize: 14,
+                              color: T.textMuted,
+                              fontWeight: 400,
+                              marginLeft: 4,
+                            }}
+                          >
+                            /mo
+                          </span>
+                          {currentSale.is_pif &&
+                            currentSale.pif_amount != null && (
+                              <span
+                                style={{
+                                  fontSize: 14,
+                                  color: T.text,
+                                  fontWeight: 500,
+                                  marginLeft: 8,
+                                }}
+                              >
+                                + $
+                                {Number(
+                                  currentSale.pif_amount,
+                                ).toLocaleString()}{" "}
+                                PIF
+                              </span>
+                            )}
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            fontSize: 14,
+                            color: T.textMuted,
+                            fontStyle: "italic",
+                          }}
+                        >
+                          Sale amount not captured
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: T.textMuted,
+                          marginTop: 6,
+                        }}
+                      >
+                        {soldByName
+                          ? `Sold by ${soldByName}`
+                          : "Rep unassigned"}
+                        {soldAt ? ` on ${soldAt}` : ""}
+                      </div>
+                    </div>
+                    {canEdit && (
+                      <button
+                        className="btn-ghost"
+                        onClick={() =>
+                          setSaleModal({
+                            mode: "edit",
+                            stage: activeStage,
+                          })
+                        }
+                        disabled={savingStage}
+                        style={{ fontSize: 12 }}
+                      >
+                        {hasValue ? "Edit" : "Add"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div
               className="surface-card"
               style={{ padding: 20, marginBottom: 16 }}
@@ -2959,6 +3466,30 @@
               ))}
             </div>
 
+            {saleModal && (
+              <SaleModal
+                title={
+                  saleModal.mode === "edit"
+                    ? "Edit sale"
+                    : `Log sale: ${saleModal.stage.name}`
+                }
+                soldByName={profile?.full_name || profile?.email}
+                initialAmount={currentSale.monetary_value}
+                initialIsPif={currentSale.is_pif}
+                initialPifAmount={currentSale.pif_amount}
+                submitting={savingStage}
+                onCancel={() => {
+                  if (!savingStage) setSaleModal(null);
+                }}
+                onConfirm={(sale) => {
+                  if (saleModal.mode === "edit") {
+                    commitSaleEdit(sale);
+                  } else {
+                    commitStageChange(saleModal.stage, sale);
+                  }
+                }}
+              />
+            )}
             {assignOpen && (
               <div style={MODAL_BACKDROP}>
                 <div className="fade-in" style={MODAL_CARD}>
@@ -5130,6 +5661,31 @@
                 </div>
               )}
             </div>
+            {headline && row.using_benchmark_fallback && (
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 500,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: T.textMuted,
+                  marginBottom: 10,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <span
+                  style={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: "50%",
+                    background: T.textDim,
+                  }}
+                />
+                Using Aira benchmark (sample too small)
+              </div>
+            )}
             <div
               style={{
                 fontSize: 13,
