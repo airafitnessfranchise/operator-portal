@@ -1042,7 +1042,18 @@
             </div>
             <div
               style={{
-                fontSize: 30,
+                // Responsive step-down for longer numeric strings so
+                // values like "$50,300" don't truncate to "$5..." in a
+                // 4-up grid on a 390px viewport. Only strings get
+                // measured; loading skeletons (React elements) keep 30.
+                fontSize: (() => {
+                  if (typeof value !== "string") return 30;
+                  const n = value.length;
+                  if (n <= 3) return 30;
+                  if (n <= 5) return 24;
+                  if (n <= 7) return 20;
+                  return 17;
+                })(),
                 fontWeight: 500,
                 color: T.textHi,
                 lineHeight: 1,
@@ -1931,15 +1942,6 @@
                           >
                             {display}
                           </div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: T.textMuted,
-                              marginTop: 2,
-                            }}
-                          >
-                            {titleCaseRole(r.role)}
-                          </div>
                         </div>
                         <div style={statCellStyle}>
                           <div style={numCellStyle}>{rcalls}</div>
@@ -2028,6 +2030,15 @@
         // number and bypass GHL (decision 2026-04-20).
         const [composeLead, setComposeLead] = useState(null);
         const [sendingMessage, setSendingMessage] = useState(false);
+        // Stage-filter pill row scrolls horizontally on mobile. Track
+        // overflow on each edge so we can render fade affordances —
+        // without them users don't know there are more stages (like
+        // "Follow Up", "7 Day Pass Converted") hiding off-screen.
+        const pillScrollRef = useRef(null);
+        const [pillEdges, setPillEdges] = useState({
+          canLeft: false,
+          canRight: false,
+        });
 
         const locIds = useMemo(() => {
           if (aggregate) {
@@ -2231,6 +2242,33 @@
           return Array.from(names).sort();
         }, [leads]);
 
+        // Reset pill-row scroll to the left on mount (and whenever the
+        // stage set changes), then track scroll position to drive the
+        // fade-edge affordances.
+        useEffect(() => {
+          const el = pillScrollRef.current;
+          if (!el) return;
+          el.scrollLeft = 0;
+          const update = () => {
+            const maxScroll = el.scrollWidth - el.clientWidth;
+            setPillEdges({
+              canLeft: el.scrollLeft > 2,
+              canRight: maxScroll - el.scrollLeft > 2,
+            });
+          };
+          update();
+          el.addEventListener("scroll", update, { passive: true });
+          let ro;
+          if (typeof ResizeObserver !== "undefined") {
+            ro = new ResizeObserver(update);
+            ro.observe(el);
+          }
+          return () => {
+            el.removeEventListener("scroll", update);
+            if (ro) ro.disconnect();
+          };
+        }, [uniqueStageNames.length]);
+
         let visible = leads;
         if (!showClosed) {
           visible = visible.filter(
@@ -2397,38 +2435,77 @@
 
             <div
               style={{
-                display: "flex",
-                gap: 6,
-                overflowX: "auto",
-                paddingBottom: 12,
+                position: "relative",
                 marginBottom: 8,
               }}
             >
-              {["all", ...uniqueStageNames].map((f) => {
-                const active = stageFilter === f;
-                const label = f === "all" ? "All" : f;
-                return (
-                  <button
-                    key={f}
-                    onClick={() => setStageFilter(f)}
-                    style={{
-                      padding: "6px 14px",
-                      borderRadius: 999,
-                      border: "none",
-                      background: active ? T.airaBlue : T.airaBlueSubtle,
-                      color: active ? "#ffffff" : T.textMuted,
-                      fontSize: 12,
-                      fontWeight: 500,
-                      whiteSpace: "nowrap",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                      transition: "background 160ms ease",
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+              <div
+                ref={pillScrollRef}
+                style={{
+                  display: "flex",
+                  gap: 6,
+                  overflowX: "auto",
+                  paddingBottom: 12,
+                  scrollbarWidth: "none",
+                }}
+              >
+                {["all", ...uniqueStageNames].map((f) => {
+                  const active = stageFilter === f;
+                  const label = f === "all" ? "All" : f;
+                  return (
+                    <button
+                      key={f}
+                      onClick={() => setStageFilter(f)}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: 999,
+                        border: "none",
+                        background: active ? T.airaBlue : T.airaBlueSubtle,
+                        color: active ? "#ffffff" : T.textMuted,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        whiteSpace: "nowrap",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        transition: "background 160ms ease",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Fade affordances — gradient matches page bg so the
+                  off-screen pills look like they bleed out the edge.
+                  pointerEvents: none so the user can still scroll/tap
+                  through the overlay. */}
+              {pillEdges.canLeft && (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    bottom: 12,
+                    width: 24,
+                    pointerEvents: "none",
+                    background: `linear-gradient(to right, ${T.bg}, transparent)`,
+                  }}
+                />
+              )}
+              {pillEdges.canRight && (
+                <div
+                  style={{
+                    position: "absolute",
+                    right: 0,
+                    top: 0,
+                    bottom: 12,
+                    width: 24,
+                    pointerEvents: "none",
+                    background: `linear-gradient(to left, ${T.bg}, transparent)`,
+                  }}
+                />
+              )}
             </div>
 
             <div
