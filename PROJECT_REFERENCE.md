@@ -1,6 +1,6 @@
 # Aira Operator Portal — Project Reference
 
-**Last updated:** April 21, 2026
+**Last updated:** April 21, 2026 (post-Phase 9.5: Leads + Conversations wired live)
 **Owner:** Mike Bell
 **Purpose:** Single source of truth for what we're building, why, and how everything connects.
 
@@ -139,6 +139,15 @@ As of April 18, 2026, the following is live and working:
 | Friendly 409 on duplicate GHL staff link                                    | ✅ Live | `users_ghl_user_id_key` constraint mapped to clean error                       |
 | **Health tab**: status cards + integrity checks + sync-all + sync_log table | ✅ Live | `sync_log` has admin-only RLS SELECT                                           |
 
+### Phase 9.5: Leads, Conversations, Invite Flow ✅ SHIPPED (April 20–21, 2026)
+
+- **Leads screen live on real data** — queries `opportunities` + `contacts` + `pipeline_stages` scoped to the selected location, or aggregated across accessible locations in Territory/Triage view. Sorted newest-first. Default filter hides sales + lost/abandoned with a "Show closed" toggle. Stage-name pill switcher + name/email/phone search. Status shown as dot + uppercase label (green for shows/sales, red for no-shows, Aira Blue default).
+- **Lead status write-back to GHL** — "Change Stage" chips on LeadDetail call `ghl-update-opportunity` with optimistic UI, toast on success, rollback + error toast on failure.
+- **Conversations screen live on real data** — new `public.conversations` cache table, messages threaded inbound/outbound, 30-day window. Top-40 per location hydrated inline during sync; remainder lazy-loaded on tap via `ghl-get-conversation-thread`.
+- **SMS send from portal** — Enter-to-send with optimistic append through `ghl-send-message`. Fully replaces any operator need to open GHL for texting.
+- **Bottom-nav aggregation** — VP/admin in Territory/Triage view sees "All Leads" / "All Messages" across accessible locations with 📍 location tags. Drill into a gym = scoped to that gym. Single-location users unchanged.
+- **Invite flow fixed end-to-end** — `admin-invite-user` now uses `auth.admin.inviteUserByEmail`, triggers `mail.send`, creates paired `public.users` row + `user_locations` links with a full rollback chain. `SetPasswordScreen` handles `type=invite` and `type=recovery` URL hashes, forces password creation before first login, and gracefully handles expired links with an "Ask your admin to resend" gate.
+
 ### Locations Configured
 
 - **Aira Fitness Fox Lake** (pilot) — fully synced
@@ -149,6 +158,18 @@ As of April 18, 2026, the following is live and working:
 ## 5. WHAT WE'RE BUILDING NEXT
 
 The previous Phase 7 → 9 plan (VP Triage → Coaching Tracker → Accountability Loop) is now partially shipped: Phase 7 (VP Triage) is live. Phase 8 and Phase 9 ended up being different work (rep dashboards, write-back, admin onboarding) — so the two Alyssa-focused deep cuts have been renumbered to **Phase 10** and **Phase 11**.
+
+### Between Phase 9.5 and Phase 10: Field Validation Window 🧪 IN PROGRESS
+
+Before starting Phase 10, run live validation with Alyssa (VP) on Fox Lake + Mishawaka data:
+
+1. Leads screen shows accurate counts vs. GHL
+2. Lead status changes in portal actually reflect in GHL (round-trip test)
+3. Conversations thread loads correctly for at least 5 recent contacts
+4. SMS send from portal delivers and appears in GHL
+5. Alyssa reports what's missing or confusing after 48 hours of real use
+
+**Known-unknown:** the portal currently trusts GHL-side stage flags. If a franchisee renames a stage in GHL, the portal's diagnosis logic may silently break. Watch for this during validation.
 
 ### Phase 10: Coaching Action Tracker
 
@@ -197,13 +218,16 @@ A week after Alyssa logs an action, the portal tells her whether it worked ("You
                  ▼
 ┌─────────────────────────────────────────────┐
 │ SUPABASE (Postgres + Auth + Edge Functions) │
-│ • Auth: email/password                      │
-│ • Postgres: locations, users, contacts,     │
-│   opportunities, appointments, pipelines    │
+│ • Auth: email/password + invite URL hash    │
+│ • Postgres: locations, users, user_locations│
+│   contacts, opportunities, appointments,    │
+│   conversations, pipelines, pipeline_stages,│
+│   ghl_staff, sync_log, coaching_sessions    │
 │ • RLS policies enforce role + location      │
 │ • RPCs: dashboard_kpis, territory_kpis,     │
-│   rep_leaderboard, location_triage (soon)   │
-│ • Edge Function: sync-ghl-to-cache          │
+│   rep_leaderboard, location_triage,         │
+│   coaching_vp_scorecard                     │
+│ • Edge Functions: see Section 7             │
 └────────────────┬────────────────────────────┘
                  │ Scheduled or on-demand sync
                  ▼
@@ -469,12 +493,19 @@ Then paste any of the build briefs from this document or your conversation with 
 
 ### Known Issues (deferred, not blocking)
 
-| Issue                                                               | Impact                                                                  | Workaround / Fix                                                                                                                                                                       |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sync-ghl-to-cache` accepts any authenticated JWT — not admin-gated | Any signed-in user can trigger a sync (idempotent, rate-limited by GHL) | Low risk; tighten with the same `current_user_role()` gate the other admin-\* functions use when convenient                                                                            |
-| Ad Spend hardcoded as "—"                                           | Single-location + territory dashboards show placeholder                 | Waiting on a decision: Facebook Ad Manager API vs. manual weekly entry                                                                                                                 |
-| Two API keys were pasted in chat history during development         | Minor security footprint                                                | Rotate when convenient; both are location-scoped (limited blast radius)                                                                                                                |
-| Historical Fox Lake opportunities still have `assigned_to = null`   | Rep dashboards won't backfill for pre-portal bookings                   | Going forward is fine — `portal_assigned_to` is set at booking time and `coalesce(portal_assigned_to, assigned_to)` drives rep KPIs. Separate Jasmine-led cleanup for historical rows. |
+| Issue                                                                        | Impact                                                                                 | Workaround / Fix                                                                                                                                                                       |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sync-ghl-to-cache` accepts any authenticated JWT — not admin-gated          | Any signed-in user can trigger a sync (idempotent, rate-limited by GHL)                | Low risk; tighten with the same `current_user_role()` gate the other admin-\* functions use when convenient                                                                            |
+| Ad Spend hardcoded as "—"                                                    | Single-location + territory dashboards show placeholder                                | Waiting on a decision: Facebook Ad Manager API vs. manual weekly entry                                                                                                                 |
+| Two API keys were pasted in chat history during development                  | Minor security footprint                                                               | Rotate when convenient; both are location-scoped (limited blast radius)                                                                                                                |
+| Historical Fox Lake opportunities still have `assigned_to = null`            | Rep dashboards won't backfill for pre-portal bookings                                  | Going forward is fine — `portal_assigned_to` is set at booking time and `coalesce(portal_assigned_to, assigned_to)` drives rep KPIs. Separate Jasmine-led cleanup for historical rows. |
+| Invite flow's `SetPasswordScreen` not yet tested with expired-link edge case | Users who click an invite link >24h later may land on a generic login with no guidance | Test the expired path, confirm the "Ask your admin to resend" gate renders                                                                                                             |
+
+### Backlog
+
+| Item                       | Why it matters                                                                                                                             | When to do it                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| Stage-flag drift detection | If a franchisee renames a GHL stage, portal auto-discovery re-applies heuristic flags on next sync — could silently break Triage diagnosis | Add a `sync_log` warning when stage names change unexpectedly |
 
 ### Common Problems
 
@@ -503,17 +534,17 @@ Then paste any of the build briefs from this document or your conversation with 
 
 **Priority ordered. Each = roughly one focused build session with Claude Code.** Items 1–4 from the previous version (Multi-location + Territory, VP Triage, personal rep dashboards, admin onboarding) are shipped and now live in Section 4.
 
-| #   | Feature                                       | Value Delivered                                                               |
-| --- | --------------------------------------------- | ----------------------------------------------------------------------------- |
-| 1   | Coaching Action Tracker (Phase 10)            | Coaching stops disappearing into DMs; every red diagnosis has an owned action |
-| 2   | Accountability Loop (Phase 11)                | VPs can measure their own impact — did the coaching move the metric?          |
-| 3   | Lock `sync-ghl-to-cache` to admin / cron only | Tightens the single Edge Function that still accepts any authenticated JWT    |
-| 4   | Wire Leads screen to real GHL data            | Jasmine sees real leads on her phone (replaces seeded demo rows)              |
-| 5   | Wire Conversations screen to real data        | Reply to SMS from the portal                                                  |
-| 6   | Facebook Ad Spend integration                 | ADPS calculations include ad-spend data; removes "—" placeholder              |
-| 7   | Custom domain `portal.airafitness.com`        | Professional URL for franchisees                                              |
-| 8   | Onboard next 3 locations                      | Exercise the location-add workflow built in Phase 9A                          |
-| 9   | Multi-location rollout to all 22+ gyms        | Replace the GHL white-label app entirely                                      |
+| #   | Feature                                           | Value Delivered                                                               | Status  |
+| --- | ------------------------------------------------- | ----------------------------------------------------------------------------- | ------- |
+| 1   | Coaching Action Tracker (Phase 10)                | Coaching stops disappearing into DMs; every red diagnosis has an owned action | Planned |
+| 2   | Accountability Loop (Phase 11)                    | VPs can measure their own impact — did the coaching move the metric?          | Planned |
+| 3   | Lock `sync-ghl-to-cache` to admin / cron only     | Tightens the single Edge Function that still accepts any authenticated JWT    | Planned |
+| 4   | Wire Leads screen to real GHL data                | Jasmine sees real leads on her phone (replaces seeded demo rows)              | ✅ Done |
+| 5   | Wire Conversations screen to real data + SMS send | Reply to SMS from the portal                                                  | ✅ Done |
+| 6   | Facebook Ad Spend integration                     | ADPS calculations include ad-spend data; removes "—" placeholder              | Planned |
+| 7   | Custom domain `portal.airafitness.com`            | Professional URL for franchisees                                              | Planned |
+| 8   | Onboard next 3 locations                          | Exercise the location-add workflow built in Phase 9A                          | Planned |
+| 9   | Multi-location rollout to all 22+ gyms            | Replace the GHL white-label app entirely                                      | Planned |
 
 ---
 
@@ -628,6 +659,18 @@ No human user of the Aira portal should ever need to open GoHighLevel. Operators
 
 **April 18, 2026 — Portal-only user architecture (Phase 9B).**
 `public.users.ghl_user_id = null` is a fully supported, first-class state. A portal user doesn't need a GHL account to exist, be tracked, or have their work attributed. The UI shows a neutral "Portal-only" pill — not a warning. Admins can optionally link a user to an existing `ghl_staff` row later, but are never required to. This unblocks hiring reps without any GHL IT step.
+
+**April 20, 2026 — Invite flow uses `inviteUserByEmail`, not `createUser` + `generateLink`.**
+The earlier `admin-invite-user` pattern silently created auth users but never triggered Supabase's mail pipeline — `mail.send` only fires when the `/invite` endpoint is used. Switched to `auth.admin.inviteUserByEmail(email, { data, redirectTo })` as the single source of invite truth. Every future operator invite flows through this single function.
+
+**April 20, 2026 — Portal handles invite + recovery URL hashes natively.**
+Supabase delivers invite sessions via URL hash (`#access_token=...&type=invite`). The portal now detects this on mount, establishes the session, and forces `SetPasswordScreen` before the user can proceed. Clicking an invite email no longer dumps users on a generic login screen expecting a password they never set.
+
+**April 20, 2026 — Coaching session records survive user deletion.**
+When a user is removed from the portal, their `coaching_sessions.coach_user_id` is set to NULL (not cascade-deleted). Coaching history is the portal's honesty mechanism (per April 18 decision) — deleting a VP's track record when they offboard would create a backdoor around that honesty. Preserved sessions with a NULL coach still surface in historical reporting; attribution can be re-stamped if the user is re-invited.
+
+**April 20, 2026 — Bottom-nav scoping follows the view, not the user.**
+Decision: when a multi-location VP is in Territory/Triage view, bottom nav shows aggregated "All Leads" / "All Messages" across their accessible locations, with 📍 tags identifying origin. When drilled into a specific gym, nav scopes to that gym. Single-location users always see their single location. Reasoning: a VP's first instinct is "what needs me right now across everything" — aggregation matches that intent. Scoping kicks in the moment they pick a specific gym to focus on.
 
 ---
 
