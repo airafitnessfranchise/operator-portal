@@ -243,5 +243,62 @@ Deno.serve(async (req) => {
     console.error("appointments upsert failed:", upErr.message);
   }
 
-  return jsonResp({ ok: true, event });
+  // Aira's going-forward rule: the rep who booked the appointment also
+  // owns the associated opportunity in GHL. Find any open opportunity
+  // for this contact at this location and stamp assignedTo. If none
+  // exists yet (e.g. contact hasn't been promoted to the pipeline),
+  // we silently skip — Alyssa doesn't want a manual opportunity-create
+  // step from the booking path.
+  let opportunityAssigned: string | null = null;
+  try {
+    const { data: targetOpp } = await adminClient
+      .from("opportunities")
+      .select("ghl_opportunity_id, pipeline_id, status, updated_at_ghl")
+      .eq("ghl_location_id", ghl_location_id)
+      .eq("ghl_contact_id", ghl_contact_id)
+      .neq("status", "lost")
+      .neq("status", "abandoned")
+      .order("updated_at_ghl", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    if (targetOpp?.ghl_opportunity_id) {
+      const assignRes = await fetch(
+        `${GHL_BASE}/opportunities/${encodeURIComponent(targetOpp.ghl_opportunity_id)}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${loc.ghl_api_key}`,
+            Version: "2021-07-28",
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ assignedTo: assigned_user_id }),
+        },
+      );
+      if (assignRes.ok) {
+        opportunityAssigned = targetOpp.ghl_opportunity_id;
+        await adminClient
+          .from("opportunities")
+          .update({
+            assigned_to: assigned_user_id,
+            synced_at: new Date().toISOString(),
+            updated_at_ghl: new Date().toISOString(),
+          })
+          .eq("ghl_opportunity_id", targetOpp.ghl_opportunity_id);
+      } else {
+        const bodyText = await assignRes.text();
+        console.warn(
+          `[ghl-book-appointment] opportunity assignment failed ${assignRes.status}: ${bodyText.slice(0, 300)}`,
+        );
+      }
+    }
+  } catch (e) {
+    console.warn("[ghl-book-appointment] opportunity-assign step threw:", e);
+  }
+
+  return jsonResp({
+    ok: true,
+    event,
+    opportunity_assigned: opportunityAssigned,
+  });
 });

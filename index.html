@@ -1608,9 +1608,13 @@
                       textAlign: "center",
                       color: T.textMuted,
                       fontSize: 13,
+                      lineHeight: 1.5,
                     }}
                   >
-                    No rep activity yet this month.
+                    No sales yet this period.
+                    <br />
+                    Reps are now auto-assigned when they mark a lead Sold or
+                    Booked. The leaderboard will populate as stages change.
                   </div>
                 )}
                 {!loading &&
@@ -2326,16 +2330,29 @@
       // We load extra context (all opportunities for this contact, recent
       // call logs) and expose a stage picker that writes to GHL via the
       // ghl-update-opportunity Edge Function.
-      function LeadDetail({ lead, onBack, onBook, onToast, onChanged }) {
+      function LeadDetail({
+        lead,
+        profile,
+        onBack,
+        onBook,
+        onToast,
+        onChanged,
+      }) {
         const [opportunities, setOpportunities] = useState([]);
         const [stages, setStages] = useState([]);
         const [callLogs, setCallLogs] = useState([]);
+        const [staff, setStaff] = useState([]);
         const [loading, setLoading] = useState(true);
         const [savingStage, setSavingStage] = useState(false);
         const [currentStageId, setCurrentStageId] = useState(lead.stage_id);
         const [currentStageName, setCurrentStageName] = useState(
           lead.stage_name,
         );
+        const [currentAssignedTo, setCurrentAssignedTo] = useState(
+          lead.opp_assigned || null,
+        );
+        const [assignOpen, setAssignOpen] = useState(false);
+        const [savingAssign, setSavingAssign] = useState(false);
 
         const markCall = () =>
           markPendingCall({
@@ -2347,11 +2364,11 @@
         const load = useCallback(async () => {
           setLoading(true);
           try {
-            const [oppsRes, stagesRes, callsRes] = await Promise.all([
+            const [oppsRes, stagesRes, callsRes, staffRes] = await Promise.all([
               window.supabase
                 .from("opportunities")
                 .select(
-                  "ghl_opportunity_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, updated_at_ghl, created_at_ghl",
+                  "ghl_opportunity_id, pipeline_id, pipeline_stage_id, name, status, monetary_value, assigned_to, updated_at_ghl, created_at_ghl",
                 )
                 .eq("ghl_location_id", lead.location_id)
                 .eq("ghl_contact_id", lead.contact_id || "__none__")
@@ -2378,13 +2395,20 @@
                 .eq("ghl_contact_id", lead.contact_id || "__none__")
                 .order("called_at", { ascending: false })
                 .limit(20),
+              window.supabase
+                .from("ghl_staff")
+                .select("ghl_user_id, full_name, email")
+                .eq("ghl_location_id", lead.location_id)
+                .order("full_name", { ascending: true, nullsFirst: false }),
             ]);
             if (oppsRes.error) throw oppsRes.error;
             if (stagesRes.error) throw stagesRes.error;
             if (callsRes.error) throw callsRes.error;
+            if (staffRes.error) throw staffRes.error;
             setOpportunities(oppsRes.data || []);
             setStages(stagesRes.data || []);
             setCallLogs(callsRes.data || []);
+            setStaff(staffRes.data || []);
             const thisOpp = (oppsRes.data || []).find(
               (o) => o.ghl_opportunity_id === lead.opportunity_id,
             );
@@ -2394,6 +2418,7 @@
                 (x) => x.ghl_stage_id === thisOpp.pipeline_stage_id,
               );
               setCurrentStageName(s?.name || null);
+              setCurrentAssignedTo(thisOpp.assigned_to || null);
             }
           } catch (e) {
             console.error("lead detail load failed:", e);
@@ -2426,15 +2451,21 @@
               : stage.counts_as_no_show
                 ? "lost"
                 : "open";
-            await callEdgeFunction("ghl-update-opportunity", {
+            const resp = await callEdgeFunction("ghl-update-opportunity", {
               opportunity_id: lead.opportunity_id,
               pipeline_stage_id: stage.ghl_stage_id,
               status: statusHint,
             });
+            if (resp?.assigned_to_caller && resp?.acting_ghl_user_id) {
+              setCurrentAssignedTo(resp.acting_ghl_user_id);
+            }
             if (onToast) {
+              const assignedSuffix = resp?.assigned_to_caller
+                ? ". Assigned to you."
+                : "";
               onToast({
                 kind: "success",
-                text: `Updated to ${stage.name}`,
+                text: `Stage updated to ${stage.name}${assignedSuffix}`,
               });
             }
             if (onChanged) onChanged();
@@ -2451,6 +2482,62 @@
             setSavingStage(false);
           }
         };
+
+        const assignTo = async (targetGhlUserId, targetFullName) => {
+          if (savingAssign || targetGhlUserId === currentAssignedTo) {
+            setAssignOpen(false);
+            return;
+          }
+          const prev = currentAssignedTo;
+          setSavingAssign(true);
+          setCurrentAssignedTo(targetGhlUserId);
+          try {
+            await callEdgeFunction("ghl-assign-opportunity", {
+              opportunity_id: lead.opportunity_id,
+              ghl_user_id: targetGhlUserId,
+            });
+            if (onToast) {
+              onToast({
+                kind: "success",
+                text: `Assigned to ${targetFullName || "rep"}`,
+              });
+            }
+            if (onChanged) onChanged();
+          } catch (e) {
+            setCurrentAssignedTo(prev);
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: e && e.message ? e.message : "Assignment failed",
+              });
+            }
+          } finally {
+            setSavingAssign(false);
+            setAssignOpen(false);
+          }
+        };
+
+        const canReassignAnyone =
+          profile &&
+          (profile.role === "admin" ||
+            profile.role === "regional_director" ||
+            profile.role === "vp" ||
+            profile.role === "manager" ||
+            profile.role === "franchisee");
+        const callerOwnGhlId = (() => {
+          if (!profile?.email) return null;
+          const match = staff.find(
+            (s) =>
+              (s.email || "").toLowerCase() ===
+              (profile.email || "").toLowerCase(),
+          );
+          return match?.ghl_user_id || null;
+        })();
+        const assignedStaffName = (() => {
+          if (!currentAssignedTo) return null;
+          const match = staff.find((s) => s.ghl_user_id === currentAssignedTo);
+          return match?.full_name || match?.email || null;
+        })();
 
         const dateAddedStr = lead.contact_date_added
           ? new Date(lead.contact_date_added).toLocaleDateString("en-US", {
@@ -2572,24 +2659,65 @@
                     <span style={{ color: T.text }}>{lead.email}</span>
                   </div>
                 )}
-                {(lead.contact_assigned || lead.opp_assigned) && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      fontSize: 14,
-                    }}
-                  >
-                    <span>👤</span>
-                    <span style={{ color: T.text }}>
-                      Assigned (GHL id):{" "}
-                      <strong style={{ fontWeight: 500, color: T.textHi }}>
-                        {lead.opp_assigned || lead.contact_assigned}
-                      </strong>
-                    </span>
-                  </div>
-                )}
+                {(() => {
+                  const canTap =
+                    !savingAssign && (canReassignAnyone || !!callerOwnGhlId);
+                  return (
+                    <button
+                      onClick={() => {
+                        if (!canTap) return;
+                        setAssignOpen(true);
+                      }}
+                      disabled={!canTap}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        fontSize: 14,
+                        padding: "6px 10px",
+                        marginLeft: -10,
+                        borderRadius: 10,
+                        border: "none",
+                        background: "transparent",
+                        color: T.text,
+                        cursor: canTap ? "pointer" : "default",
+                        fontFamily: "inherit",
+                        textAlign: "left",
+                        transition: "background 160ms ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (canTap)
+                          e.currentTarget.style.background = T.surfaceHover;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                      }}
+                    >
+                      <span>👤</span>
+                      <span>
+                        Assigned:{" "}
+                        {currentAssignedTo ? (
+                          <strong style={{ fontWeight: 500, color: T.textHi }}>
+                            {assignedStaffName || currentAssignedTo}
+                          </strong>
+                        ) : (
+                          <span style={{ color: T.textDim }}>Unassigned</span>
+                        )}
+                        {canTap && (
+                          <span
+                            style={{
+                              color: T.airaBlueDark,
+                              marginLeft: 8,
+                              fontSize: 12,
+                            }}
+                          >
+                            {savingAssign ? "saving…" : "change"}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })()}
               </div>
               <div
                 style={{
@@ -2830,6 +2958,136 @@
                 </div>
               ))}
             </div>
+
+            {assignOpen && (
+              <div style={MODAL_BACKDROP}>
+                <div className="fade-in" style={MODAL_CARD}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={MODAL_TITLE}>Assign opportunity</div>
+                    <button
+                      onClick={() => setAssignOpen(false)}
+                      disabled={savingAssign}
+                      style={MODAL_CLOSE(savingAssign)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: T.textMuted,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {canReassignAnyone
+                      ? "Pick the rep who owns this lead in GHL."
+                      : "You can only assign this lead to yourself."}
+                  </div>
+                  {canReassignAnyone ? (
+                    <div
+                      style={{
+                        maxHeight: "55vh",
+                        overflowY: "auto",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                      }}
+                    >
+                      {staff.length === 0 && (
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: T.textMuted,
+                            padding: 12,
+                          }}
+                        >
+                          No GHL staff cached for this location. Run a sync from
+                          Admin → Health.
+                        </div>
+                      )}
+                      {staff.map((s) => {
+                        const active = s.ghl_user_id === currentAssignedTo;
+                        return (
+                          <button
+                            key={s.ghl_user_id}
+                            onClick={() => assignTo(s.ghl_user_id, s.full_name)}
+                            disabled={savingAssign}
+                            style={{
+                              textAlign: "left",
+                              padding: "10px 14px",
+                              borderRadius: 10,
+                              border: `0.5px solid ${
+                                active ? T.airaBlue : T.border
+                              }`,
+                              background: active ? T.airaBlueDim : T.surface,
+                              color: active ? T.airaBlueDark : T.text,
+                              fontSize: 14,
+                              fontWeight: 500,
+                              cursor: savingAssign ? "wait" : "pointer",
+                              fontFamily: "inherit",
+                              transition: "all 160ms ease",
+                            }}
+                          >
+                            {s.full_name || s.email || s.ghl_user_id}
+                            {s.email && s.full_name && (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: T.textMuted,
+                                  marginTop: 2,
+                                }}
+                              >
+                                {s.email}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : callerOwnGhlId ? (
+                    <button
+                      onClick={() =>
+                        assignTo(
+                          callerOwnGhlId,
+                          profile?.full_name || "yourself",
+                        )
+                      }
+                      disabled={savingAssign}
+                      className="btn-primary"
+                      style={{ padding: "12px" }}
+                    >
+                      {savingAssign ? "Saving…" : "Assign to me"}
+                    </button>
+                  ) : (
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: T.textMuted,
+                        padding: 12,
+                      }}
+                    >
+                      You have no matching GHL staff record at this location
+                      yet. Ask your admin to link your account in Admin →
+                      People.
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setAssignOpen(false)}
+                    disabled={savingAssign}
+                    className="btn-secondary"
+                    style={{ padding: "12px" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         );
       }
@@ -10846,6 +11104,7 @@
             return (
               <LeadDetail
                 lead={selectedLead}
+                profile={profile}
                 onBack={() => setSelectedLead(null)}
                 onBook={() =>
                   openBooking({

@@ -188,6 +188,50 @@ Deno.serve(async (req) => {
     );
   }
 
+  // Resolve the acting user's ghl_user_id for THIS location. Aira's
+  // going-forward rule (decision 2026-04-20): whenever a portal user
+  // changes a stage, they get stamped as the opportunity's assigned
+  // rep in GHL. ghl_staff is per-location, so the same portal user
+  // can map to different ghl_user_ids across gyms. If no match is
+  // found (e.g. portal-only VP with no GHL account at this location),
+  // we skip the assignment, log an onboarding-gap warning, and let
+  // the stage change succeed anyway.
+  const { data: callerAuth } = await userClient.auth.getUser();
+  const actingAuthUserId = callerAuth?.user?.id || null;
+  let actingGhlUserId: string | null = null;
+  let actingEmail: string | null = null;
+  let actingFullName: string | null = null;
+  let assignmentSkippedReason: string | null = null;
+  if (actingAuthUserId) {
+    const { data: portalUser } = await adminClient
+      .from("users")
+      .select("email, full_name")
+      .eq("auth_user_id", actingAuthUserId)
+      .maybeSingle();
+    actingEmail = portalUser?.email || null;
+    actingFullName = portalUser?.full_name || null;
+    if (actingEmail) {
+      const { data: staffRow } = await adminClient
+        .from("ghl_staff")
+        .select("ghl_user_id, full_name")
+        .eq("ghl_location_id", opp.ghl_location_id)
+        .ilike("email", actingEmail)
+        .maybeSingle();
+      if (staffRow?.ghl_user_id) {
+        actingGhlUserId = staffRow.ghl_user_id;
+        if (!actingFullName && staffRow.full_name) {
+          actingFullName = staffRow.full_name;
+        }
+      } else {
+        assignmentSkippedReason = `no ghl_staff row for ${actingEmail} at ${opp.ghl_location_id}`;
+      }
+    } else {
+      assignmentSkippedReason = "caller has no email on public.users";
+    }
+  } else {
+    assignmentSkippedReason = "could not resolve caller auth user";
+  }
+
   const ghlBody: Record<string, unknown> = {};
   if (pipeline_stage_id) {
     ghlBody.pipelineStageId = pipeline_stage_id;
@@ -195,6 +239,9 @@ Deno.serve(async (req) => {
   }
   if (requestedStatus) {
     ghlBody.status = requestedStatus;
+  }
+  if (actingGhlUserId) {
+    ghlBody.assignedTo = actingGhlUserId;
   }
 
   const ghlRes = await fetch(
@@ -236,13 +283,14 @@ Deno.serve(async (req) => {
     if (resolvedPipelineId) cachePatch.pipeline_id = resolvedPipelineId;
   }
   if (requestedStatus) cachePatch.status = requestedStatus;
+  if (actingGhlUserId) cachePatch.assigned_to = actingGhlUserId;
 
   const { data: updated, error: updateErr } = await adminClient
     .from("opportunities")
     .update(cachePatch)
     .eq("ghl_opportunity_id", opportunity_id)
     .select(
-      "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, status, name, updated_at_ghl",
+      "ghl_opportunity_id, ghl_location_id, ghl_contact_id, pipeline_id, pipeline_stage_id, status, name, assigned_to, updated_at_ghl",
     )
     .maybeSingle();
   if (updateErr) {
@@ -251,14 +299,44 @@ Deno.serve(async (req) => {
     );
   }
 
+  // Onboarding-gap signal: caller changed a stage but we couldn't
+  // auto-assign them. Surface through sync_log so admin → Health can
+  // see who's missing a ghl_staff row where.
+  if (assignmentSkippedReason) {
+    try {
+      await adminClient.from("sync_log").insert({
+        status: "success",
+        sync_type: "opportunity_update_no_assign",
+        ghl_location_id: opp.ghl_location_id,
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        error_message: `assignedTo skipped: ${assignmentSkippedReason}`,
+        metadata: {
+          opportunity_id,
+          acting_email: actingEmail,
+          acting_auth_user_id: actingAuthUserId,
+        },
+      });
+    } catch (e) {
+      console.warn(
+        `[ghl-update-opportunity] sync_log warning insert failed:`,
+        e,
+      );
+    }
+  }
+
   console.log(
-    `[ghl-update-opportunity] ${opportunity_id} → stage=${pipeline_stage_id || "-"} status=${requestedStatus || "-"}`,
+    `[ghl-update-opportunity] ${opportunity_id} → stage=${pipeline_stage_id || "-"} status=${requestedStatus || "-"} assignedTo=${actingGhlUserId || "-"}`,
   );
 
   return jsonResp({
     ok: true,
     opportunity: updated || null,
     stage_name: stageName,
+    assigned_to_caller: !!actingGhlUserId,
+    acting_ghl_user_id: actingGhlUserId,
+    acting_full_name: actingFullName,
+    assignment_skipped_reason: assignmentSkippedReason,
     ghl: ghlData?.opportunity || ghlData || null,
   });
 });
