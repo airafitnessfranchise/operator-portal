@@ -1906,6 +1906,8 @@
         accessibleLocations,
         aggregate,
         onSelect,
+        onToast,
+        onOpenConversation,
       }) {
         const [leads, setLeads] = useState([]);
         const [stages, setStages] = useState([]);
@@ -1918,6 +1920,11 @@
         // the top so the red/amber tail is the first thing a rep sees.
         // "newest" is the old date_added DESC behaviour.
         const [sortMode, setSortMode] = useState("followup");
+        // List-row Text button opens the same in-portal composer as
+        // LeadDetail. Native sms: would send from the rep's personal
+        // number and bypass GHL (decision 2026-04-20).
+        const [composeLead, setComposeLead] = useState(null);
+        const [sendingMessage, setSendingMessage] = useState(false);
 
         const locIds = useMemo(() => {
           if (aggregate) {
@@ -2172,6 +2179,42 @@
           ).length;
 
         const title = aggregate ? "All Leads" : "Leads";
+
+        const sendMessage = async (message) => {
+          if (!composeLead || !composeLead.contact_id) {
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: "Missing contact id — can't send from this lead",
+              });
+            }
+            return;
+          }
+          setSendingMessage(true);
+          try {
+            await callEdgeFunction("ghl-send-message", {
+              ghl_location_id: composeLead.location_id,
+              ghl_contact_id: composeLead.contact_id,
+              type: "SMS",
+              message,
+            });
+            if (onToast) {
+              onToast({ kind: "success", text: "Message sent." });
+            }
+            const sentContactId = composeLead.contact_id;
+            setComposeLead(null);
+            if (onOpenConversation) onOpenConversation(sentContactId);
+          } catch (e) {
+            if (onToast) {
+              onToast({
+                kind: "error",
+                text: e && e.message ? e.message : "Send failed",
+              });
+            }
+          } finally {
+            setSendingMessage(false);
+          }
+        };
 
         return (
           <div className="fade-in" style={{ padding: "24px 20px 32px" }}>
@@ -2598,9 +2641,11 @@
                         <ActionBtn
                           icon="💬"
                           label="Text"
-                          href={`sms:${lead.phone}`}
                           small
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setComposeLead(lead);
+                          }}
                         />
                       )}
                     </div>
@@ -2622,6 +2667,18 @@
                   ? "No leads synced yet for this location."
                   : "No leads match this filter."}
               </div>
+            )}
+
+            {composeLead && (
+              <SendMessageComposer
+                contactName={composeLead.full_name}
+                contactPhone={composeLead.phone}
+                submitting={sendingMessage}
+                onSend={sendMessage}
+                onCancel={() => {
+                  if (!sendingMessage) setComposeLead(null);
+                }}
+              />
             )}
           </div>
         );
@@ -12635,6 +12692,12 @@
                   accessibleLocations={accessibleLocations}
                   aggregate={aggregateLists}
                   onSelect={(l) => setSelectedLead(l)}
+                  onToast={showToast}
+                  onOpenConversation={(contactId) => {
+                    setPendingConversationContact(contactId);
+                    setSelectedLead(null);
+                    setScreen("conversations");
+                  }}
                 />
               );
             case "conversations":
