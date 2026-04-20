@@ -3543,10 +3543,14 @@
           }
         }, [selectedLocationId, fetchAppts]);
 
-        // Initial load: show cached immediately, background-sync + refetch
+        // Show cached immediately. The full sync-ghl-to-cache call was
+        // previously triggered on every mount here — that turned tab
+        // refocus (which remounted the tree prior to the auth-listener
+        // fix) into a silent sync-hammer and contributed to Supabase
+        // quota burn + 504s. Users get fresh data via the explicit ↻
+        // Refresh button above instead.
         useEffect(() => {
           load();
-          triggerSync();
           // eslint-disable-next-line
         }, [selectedLocationId, callLogVersion]);
 
@@ -10640,8 +10644,27 @@
         setSelectedLocationId,
         onLogout,
       }) {
-        const [screen, setScreen] = useState("dashboard");
-        const [selectedLead, setSelectedLead] = useState(null);
+        // Restore nav state from sessionStorage so tab-switches and Cmd+R
+        // don't kick the user back to their default landing. NAV_KEY is
+        // cleared on explicit sign-out (handleLogout), not on token
+        // refresh. See NAV_KEY definition above App.
+        const restoredNav = (() => {
+          try {
+            const raw = sessionStorage.getItem(NAV_KEY);
+            if (!raw) return null;
+            const p = JSON.parse(raw);
+            return p && typeof p === "object" ? p : null;
+          } catch {
+            return null;
+          }
+        })();
+
+        const [screen, setScreen] = useState(
+          () => restoredNav?.screen || "dashboard",
+        );
+        const [selectedLead, setSelectedLead] = useState(
+          () => restoredNav?.selectedLead || null,
+        );
         const [settingsOpen, setSettingsOpen] = useState(false);
         const [adminOpen, setAdminOpen] = useState(false);
         const [coachingOpen, setCoachingOpen] = useState(false);
@@ -10671,8 +10694,25 @@
         );
 
         // Manager drill-down into a specific rep's personal dashboard
-        const [drilledRep, setDrilledRep] = useState(null);
+        const [drilledRep, setDrilledRep] = useState(
+          () => restoredNav?.drilledRep || null,
+        );
         const isSalesRep = profile.role === "sales_rep";
+
+        // Persist the navigation cursor on every change so a token refresh
+        // (which no longer remounts us thanks to the App listener fix, but
+        // is still a safety net) or a Cmd+R reload keeps the user where
+        // they were.
+        useEffect(() => {
+          try {
+            sessionStorage.setItem(
+              NAV_KEY,
+              JSON.stringify({ screen, selectedLead, drilledRep }),
+            );
+          } catch {
+            /* sessionStorage can fail in private-mode Safari — best effort */
+          }
+        }, [screen, selectedLead, drilledRep]);
 
         // Booking modal
         const [bookingOpen, setBookingOpen] = useState(false);
@@ -11432,6 +11472,11 @@
       // point, so the hash is gone, but we want to keep them on SetPassword
       // until they actually submit.
       const PENDING_FLOW_KEY = "aira_pending_password_flow";
+      // AuthenticatedApp persists its current view (screen / open lead /
+      // open rep drill) here so tab-switches, token refreshes, and Cmd+R
+      // don't dump the user back to their default landing. Cleared on
+      // explicit sign-out; dies naturally when the tab closes.
+      const NAV_KEY = "aira_nav_state";
       function consumeInviteHash() {
         const raw = window.location.hash || "";
         const hash = raw.startsWith("#") ? raw.slice(1) : raw;
@@ -11529,6 +11574,16 @@
           // swallow it as soon as the client is available.
           const inviteCtx = consumeInviteHash();
 
+          // Track which auth user we've already processed. Supabase-js
+          // re-broadcasts SIGNED_IN / TOKEN_REFRESHED / INITIAL_SESSION
+          // whenever the tab regains focus and the JWT is rotated;
+          // without this guard the root re-set status to "loading",
+          // which unmounted AuthenticatedApp and wiped every child
+          // screen (open lead, open conversation, etc.). We only route
+          // on genuine transitions: null → user (fresh login) or
+          // user → null (sign-out).
+          let knownUserId = null;
+
           const start = async () => {
             // Expired / access_denied invite → dedicated screen, skip the
             // usual session flow so the user isn't bounced to a login they
@@ -11556,6 +11611,7 @@
               data: { session },
             } = await window.supabase.auth.getSession();
             if (!mounted) return;
+            if (session?.user?.id) knownUserId = session.user.id;
 
             // Invite / recovery: hold them on SetPasswordScreen until they
             // pick a password. Skip loadProfile entirely — the normal
@@ -11576,12 +11632,29 @@
               (event, sess) => {
                 if (!mounted) return;
                 if (event === "SIGNED_OUT") {
+                  knownUserId = null;
                   localStorage.removeItem("aira_selected_location_id");
                   sessionStorage.removeItem(PENDING_FLOW_KEY);
+                  sessionStorage.removeItem(NAV_KEY);
                   setState({ status: "login" });
                   return;
                 }
+
+                const newUserId = sess?.user?.id || null;
+                // Same user as before → this is just a token refresh or
+                // a re-broadcast on tab focus. Never re-route.
+                if (newUserId && newUserId === knownUserId) return;
+                // Passive events we never route on, even on first fire.
+                if (
+                  event === "TOKEN_REFRESHED" ||
+                  event === "USER_UPDATED" ||
+                  event === "INITIAL_SESSION"
+                ) {
+                  if (newUserId) knownUserId = newUserId;
+                  return;
+                }
                 if (event === "SIGNED_IN" && sess) {
+                  knownUserId = newUserId;
                   const pending =
                     sessionStorage.getItem(PENDING_FLOW_KEY) ||
                     inviteCtx.flowType;
@@ -11609,6 +11682,7 @@
 
         const handleLogout = async () => {
           localStorage.removeItem("aira_selected_location_id");
+          sessionStorage.removeItem(NAV_KEY);
           try {
             await window.supabase.auth.signOut();
           } catch (e) {
